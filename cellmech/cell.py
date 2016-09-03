@@ -24,7 +24,7 @@ def norm(v,what=None):
 		u,n=null,0.
 	if what=='vec':
 		return u
-	if what=='mag':
+	if what=='mag' or what=='len':
 		return n
 	return [u,n]
 

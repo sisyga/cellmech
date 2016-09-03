@@ -24,7 +24,7 @@ def generatePoint(L):
 #            MAIN 
 
 p = argparse.ArgumentParser(
-		description='Simple plane configuration setup cellmech.')
+		description='Simple plane configuration setup.')
 p.add_argument('-o', action='store', dest='pickleFile', metavar='FILE', 
 		default='config.pickle', help='output pickle FILE')
 p.add_argument('-b', action='store', dest='bend',  default=10.0,
