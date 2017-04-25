@@ -55,16 +55,19 @@ def povrayGraph():
 	for l in c.links: 
 		if l.d < l.d0 : 
 			if args.link_rule == 1:
-				q=(l.d0-l.d)/l.d0*10
+				q=(l.d0-l.d)/l.d0*2
 			elif args.link_rule == 2:
 				q=l.d0-l.d
+#			color= str(q) + ", 0, " +str(1-q) 
+			color= str(0.5+q) + ", 0.5, 0.5"
 		else :
 			if args.link_rule == 1:
-				q=(l.d-l.d0)/l.d0*10
+				q=(l.d-l.d0)/l.d0*2
 			elif args.link_rule == 2:
 				q=l.d-l.d0
-			color= "0, " + str(q) + ", " + str(1-q)
-		link = genLink(l = l, radius = 0.05, color = color)
+#			color= "0, " + str(q) + ", " + str(1-q)
+			color= "0.5, 0.5, " + str(0.5+q) 
+		link = genLink(l = l, radius = 0.1, color = color)
 		print link
 
 #            MAIN 
