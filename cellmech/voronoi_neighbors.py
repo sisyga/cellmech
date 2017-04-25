@@ -45,7 +45,8 @@ def addGhosts (positions,d0max):
 	return ghosts
 
 
-#  call as VoronoiNeighbors( [ (cell.x[n.r], n.hasattr("surface") ) for n in cell.nodes ], is3D, d0max )
+#  call as VoronoiNeighbors( [ (cell.x[n.r], n.hasattr("surface") ) for n in cell.nodes ], d0max, is3D )
+#  !!!! d0max is ignored in 2D...
 #  positions: list of 2-tuples: ((x,y,z),flag)
 #  boolean is3D
 def VoronoiNeighbors(positions, d0max, is3D=False):
