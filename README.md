@@ -1,14 +1,14 @@
 # cellmech
 <pre>
-a suitable makefile alternates two programs:
-	cellmech/cellmech.py:	calculates mechanical equilibrium
-	cellmech/modlink.py:    link addition/removal
-
-
 requires pip, pyhull
 	sudo apt-get install python-pip python-dev
 	sudo pip install pyhull
 
+	a suitable makefile alternates two programs:
+		cellmech/cellmech.py:	calculates mechanical equilibrium
+		cellmech/modlink.py:    link addition/removal
+	
+run the example simulation, see examples/readme.txt
 
 extracting info from pickle files:
 	examples/pickleRead.py
@@ -30,4 +30,19 @@ pickle file visualization:
 		(see examples/povray.range)
 
 	the image resolution is hardcoded to 480x480 in pickleVis_pov.sh
+
+modLink.py:
+            reads parameters
+
+            cell.loadData()
+            delAttrDist()   removes dist attribute from nodes
+            checkLinkX()    removes links intersecting with other links
+                intersect()
+                    ccw()
+            delLinkList()   appends to_del list
+            addLinkList()   appends to_add list
+            pickEvent()     either removes or adds object
+            default_update_d0() or other externally defined function
+            cell.dumpData()
+
 </pre>
