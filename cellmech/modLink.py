@@ -44,10 +44,10 @@ def tryLink(n,m,d0max):
 	if d>d0max: return -1, cell.null				#false
 	return d, e						#true: d>0
 
-def addLinkList(anis, is3d):
+def addLinkList(anis, is3d, d0max):
 	for i,j in voronoi_neighbors.VoronoiNeighbors(
- 			[ n.getR() for n in c.nodes ], 2.0, is3D=is3d ):
-		d,e=tryLink(c.nodes[i],c.nodes[j],2.0)
+ 			[ n.getR() for n in c.nodes ], d0max, is3D=is3d ):
+		d,e=tryLink(c.nodes[i],c.nodes[j],d0max)
 		if d > 1e-5:
 			p= (1-(d/2.0)) * ( 1-anis + anis*e[0]*e[0] )
 			to_add.append( ( (c.nodes[i],c.nodes[j]) ,p ) )
@@ -160,6 +160,7 @@ defaults = {
 	"p_del"		: 0.2,
 	"chkx"		: True,
 	"anis"		: 0.0,
+	"d0max"		: 2.0,
 	"d0_0"		: "1.17",
 	"update_d0_func" : ""
 	}
@@ -191,6 +192,8 @@ p2.add_argument("--chkx", dest='chkx',
 		type=bool, help='check for overlapping links')
 p2.add_argument("--is3d", dest='is3d', default=False,
 		type=bool, help='3D simulation')
+p2.add_argument("--d0max", default=2.0, dest='d0max', metavar='2.0',
+		type=float, help='Maximal distance bridged. ')
 p2.add_argument("--d0_0", default=1.17, dest='d0_0', metavar='1.17',
 		type=float, help='Set d0 (equilibrium spring distance) value.')
 p2.add_argument('--log', dest='logFile', metavar='FILE', default = "log",
@@ -208,7 +211,7 @@ if args.chkx>0 : checkLinkX()
 to_del = []
 delLinkList(args.force_limit, args.anis)
 to_add = []
-addLinkList(args.anis, args.is3d)
+addLinkList(args.anis, args.is3d, args.d0max)
 pickEvent(args.p_add, args.p_del)
 print "dt:",dt
 
