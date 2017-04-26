@@ -17,3 +17,5 @@ png/start.png : start.pickle.gz povray.range povray.colorscale
 povray.colorscale :
 	echo 2.0 > $@
 
+avi : png
+	avconv -i png/%03d.png -vcodec libx264 $$(basename $$PWD).avi
