@@ -1,3 +1,6 @@
+png/%.png : pickles/%.pickle.gz povray.range
+	${CELLMECH}/pickleVis_pov.sh $< povray.range  > $@
+
 %.png : %.pickle.gz povray.range
 	${CELLMECH}/pickleVis_pov.sh $< povray.range  > $@
 
