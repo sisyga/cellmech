@@ -55,18 +55,27 @@ def povrayGraph():
 	for l in c.links: 
 		if l.d < l.d0 : 
 			if args.link_rule == 1:
-				q=(l.d0-l.d)/l.d0*2
+				q=(l.d0-l.d)/l.d0*args.color_scale
 			elif args.link_rule == 2:
 				q=l.d0-l.d
-#			color= str(q) + ", 0, " +str(1-q) 
-			color= str(0.5+q) + ", 0.5, 0.5"
+			if q<0.5:
+				color= str(0.5+q) + ", 0.5, 0.5"
+			elif q<1.0:
+				color= "1.0, " + str(1.0-q) + ", " + str(1.0-q)
+			else:
+				color= "1.0, 0.0, 0.0" 
+
 		else :
 			if args.link_rule == 1:
-				q=(l.d-l.d0)/l.d0*2
+				q=(l.d-l.d0)/l.d0*args.color_scale
 			elif args.link_rule == 2:
 				q=l.d-l.d0
-#			color= "0, " + str(q) + ", " + str(1-q)
-			color= "0.5, 0.5, " + str(0.5+q) 
+			if q<0.5:
+				color= "0.5, 0.5, " + str(0.5+q) 
+			elif q<1.0:
+				color= str(1.0-q) + ", " + str(1.0-q) + ", 1.0"
+			else:
+				color= "0.0, 0.0, 1.0" 
 		link = genLink(l = l, radius = 0.1, color = color)
 		print link
 
@@ -80,8 +89,8 @@ p.add_argument('-o', dest='outputFile', metavar='FILE',
 p.add_argument('-r', dest='range', type=float, help='display range')
 p.add_argument('-l', dest='link_rule', type=int, default=1,
 		 help='link color rule: 1, 2, ... ')
-p.add_argument('-w', dest='wait', metavar='N', type=int, default=3,
-                help='wait N sec before screen capture')
+p.add_argument('-cs', dest='color_scale', metavar='2.0', type=float, default=2.0,
+                help='scale deformation to color')
 args=p.parse_args()
 
 c=cell.loadData(args.inputFile)
