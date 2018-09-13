@@ -1,7 +1,8 @@
 import numpy as np
 import itertools
-from pyhull.delaunay import DelaunayTri
-
+# from pyhull.delaunay import DelaunayTri
+from scipy.spatial import Delaunay, delaunay_plot_2d
+from matplotlib import pyplot as plt
 
 # describing a plane through point P with normal vector n
 # P = (px, py, pz)
@@ -54,21 +55,19 @@ def addGhosts(positions, d0max):
 #  boolean is3D
 def VoronoiNeighbors(positions, d0max, is3D=False):
     if is3D:
-        p = [n for (n, f) in positions]  # component [0] is a 3d vector
-        p += addGhosts(positions, d0max)
+        # p = [n for (n, f) in positions]  # component [0] is a 3d vector
+        # p += addGhosts(positions, d0max) # I don't understand ghost particles, for now, neglect them
+        p = positions
     else:
-        p = [n[0:2] for n in positions]
-
-    #	with open("particles.txt", "w") as f:
-    #		for i,q in enumerate(p) :
-    #			if i==len(positions) : f.write("\n\n")
-    #			f.write("%f %f %f\n" % (q[0],q[1],q[2]) )
+        p = [n[:2] for n in positions]
 
     # tri: list of interconnectedparticles: [ (a, b, c), (b, c, d), ... ]
-    tri = DelaunayTri(p, joggle=True)
-
+    # tri = DelaunayTri(p, joggle=True)
+    tri = Delaunay(p, qhull_options='QJ')
     # neighbors contain pairs of adjacent particles: [ (a,b), (c,d), ... ]
-    neighbors = [list(itertools.combinations(v, 2)) for v in tri.vertices]
+    neighbors = [list(itertools.combinations(v, 2)) for v in tri.simplices]
+    # neighbors = set([tuple(itertools.combinations(v, 2)) for v in tri.simplices])
+    # neighbors = tri.neighbors
 
     n = []
     for (i, j) in itertools.chain.from_iterable(neighbors):
@@ -78,11 +77,11 @@ def VoronoiNeighbors(positions, d0max, is3D=False):
             n.append((j, i))
 
     neighbors = set(n)
-
-    if is3D:  # filter list for ghost particles
-        return [(i, j) for (i, j) in neighbors if i < len(positions) and j < len(positions)]
-    else:
-        return neighbors
+    return neighbors  # as there are no ghost particles yet, just return everything
+    # if is3D:  # filter list for ghost particles
+    #    return [(i, j) for (i, j) in neighbors if i < len(positions) and j < len(positions)]
+    # else:
+    #    return neighbors
 
 
 # http://stackoverflow.com/questions/419163/what-does-if-name-main-do
