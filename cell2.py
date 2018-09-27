@@ -310,8 +310,8 @@ class Configuration:
     def getForces(self, t, X, norm, normT, bend, twist, k, d0, nodeinds):
         self.updateDists(X)
         self.updateLinkForces(X, t, norm, normT, bend, twist, k, d0, nodeinds)
-        self.Fnode = np.sum(self.Flink, axis = 0)
-        self.Mnode = np.sum(self.Flink, axis = 0)
+        self.Fnode = np.sum(self.Flink, axis = 1)
+        self.Mnode = np.sum(self.Flink, axis = 1)
 
         return np.transpose(np.array([self.Fnode, self.Mnode]), axes = (1, 0, 2))
 
