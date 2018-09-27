@@ -1,9 +1,8 @@
 #!/usr/bin/python  -u
 
-import numpy as np
-import mayavi.mlab as mlab
 from cell import *
 from voronoi_neighbors import *
+import cProfile
 
 #######################################################
 
@@ -87,6 +86,7 @@ if __name__ == '__main__':
         if norm(c.x[c.nodes[i].r] - c.x[c.nodes[j].r], 'mag') <= d0max:
             c.nodes[i].addLinkTo(c.nodes[j])
 
-    configs, ts = c.timeevo(25, record=True)
-    animateconfigs(configs, ts=ts)
-    mlab.show()
+    cProfile.run('c.timeevo(2, record=True)', sort='cumtime')
+    # configs, ts = c.timeevo(200, record=True)
+    # animateconfigs(configs, ts=ts)
+    # mlab.show()
