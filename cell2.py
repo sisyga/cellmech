@@ -1,21 +1,13 @@
 #!/usr/bin/python  -u
 
-import argparse
 import collections
 import copy
-import gzip
 import itertools
-import os
-import pickle
 import sys
 from math import exp, log, sqrt
 import warnings
-
 import numpy as np
-from mayavi import mlab
-from numpy.random import random
-
-import voronoi_neighbors
+import numpy.random as npr
 
 warnings.filterwarnings("error")
 
@@ -106,89 +98,9 @@ def update_progress(progress):
     sys.stdout.flush()
 
 
-def showconfig(config, figure=None, figureindex=0, bgcolor=(1, 1, 1), fgcolor=(0, 0, 0), figsize=(1000, 1000),
-               cmap='viridis', vmaxlinks=5, vmaxcells=5,
-               cbar=False):
-    if figure is None:
-        fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
-    else:
-        fig = figure
-    x, y, z, phi1, phi2, phi3 = config.x.reshape(6, config.N, order='F')
-    posl, rl, dl, fl, fc = [], [], [], [], []
-    for l in config.links:
-        posl.append(config.x[l.n1.r])
-        rl.append(l.e)
-        dl.append(l.d)
-        fl.append(np.linalg.norm(l.F1))
-
-    for c in config.nodes:
-        fc.append(np.linalg.norm(c.F))
-
-    dl = np.asarray(dl)
-    fl = np.asarray(fl)
-    xl, yl, zl = np.asarray(posl).T
-    rxl, ryl, rzl = np.asarray(rl).T
-    rxl *= dl
-    ryl *= dl
-    rzl *= dl
-
-    cells = mlab.points3d(x, y, z, fc, scale_factor=1, opacity=0.5, resolution=16, scale_mode='none', vmin=0.,
-                          colormap=cmap, vmax=vmaxcells)
-    links = mlab.quiver3d(xl, yl, zl, rxl, ryl, rzl, scalars=fl, mode='2ddash', line_width=4., scale_mode='vector',
-                          scale_factor=1, colormap=cmap, vmin=0., vmax=vmaxlinks)
-    links.glyph.color_mode = "color_by_scalar"
-    if cbar:
-        mlab.scalarbar(links, nb_labels=2, title='Force on link')
-    # mlab.draw()
-    return cells, links
-
-
-@mlab.animate(delay=100)
-def animateconfigs(configs, ts=None, figureindex=0, bgcolor=(1, 1, 1), fgcolor=(0, 0, 0), figsize=(1000, 1000),
-                   cmap='viridis', cbar=False):
-    fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
-    c = configs[0]
-    vmaxcells = max([max([np.linalg.norm(node.F) for node in config.nodes]) for config in configs])
-    vmaxlinks = max([max([np.linalg.norm(link.F1) for link in config.links]) for config in configs])
-    cells, links = showconfig(c, figure=fig, vmaxcells=vmaxcells, vmaxlinks=vmaxlinks)
-    # (cells.mlab_source.x.max(), cells.mlab_source.y.max(), cells.mlab_source.z.max(), '0.0')
-    text = mlab.title('0.0', height=.9)
-    if ts is None:
-        ts = range(len(configs))
-    while True:
-        for (c, t) in zip(configs[1:], ts[1:]):
-            x, y, z, phi1, phi2, phi3 = c.x.reshape(6, c.N, order='F')
-            posl, rl, dl, fl, fc = [], [], [], [], []
-            for l in c.links:
-                posl.append(c.x[l.n1.r])
-                rl.append(l.e)
-                dl.append(l.d)
-                fl.append(np.linalg.norm(l.F1))
-
-            for n in c.nodes:
-                fc.append(np.linalg.norm(n.F))
-
-            dl = np.asarray(dl)
-            fl = np.asarray(fl)
-            xl, yl, zl = np.asarray(posl).T
-            rxl, ryl, rzl = np.asarray(rl).T
-            rxl *= dl
-            ryl *= dl
-            rzl *= dl
-            cells.mlab_source.set(x=x, y=y, z=z, scalars=fc)
-            links.mlab_source.reset(x=xl, y=yl, z=zl, u=rxl, v=ryl, w=rzl, scalars=fl)
-            text.set(text='{}'.format(round(t, 2)))
-            print 'Updating... '
-            yield
-
-
 class Configuration:
-    def __init__(self, num, dumpdir=None, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
+    def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
                  p_del=0.2, chkx=True, anis=0.0, d0max=2., unrestricted=True, distlimit=3):
-        self.nodes = []
-        self.links = []
-        self.nNodes = 0  # bookkeeping for state vector position (I don't get that)
-        self.dumpdir = dumpdir  # string for directory to save configs
         # parameters for mechanical equilibration
         self.dt = dt
         self.nmax = nmax
@@ -332,8 +244,6 @@ class Configuration:
             k1 = self.getForces(x, t, norm, normT, bend, twist, k, d0, nodeinds)
             Q = np.dot(k1, k1) / len(self.nodes)
             # print i, Q, max([x[n.r][0] for n in self.nodes])
-            if i % 100 == 0 and self.dumpdir is not None:
-                dumpData('s/%05d.pickle' % (self.dumpdir, i))
             if Q < self.qmin:
                 steps = i + 1
                 break
@@ -345,64 +255,58 @@ class Configuration:
         self.nodes = x
         return steps * h
 
-    def delAttrDist(self):
-        for n in self.nodes:
-            if hasattr(n, 'dist'):
-                delattr(n, "dist")
+    def getLinkList(self):
+        allLinks0, allLinks1 = np.where(self.islink is True)
+        return np.array([[allLinks0[i], allLinks1[i]] for i in range(len(allLinks0)) if allLinks0[i] > allLinks1[i]])
 
     def checkLinkX(self):
         Xs = []
         delete_list = []
-        for l1, l2 in itertools.combinations(self.links, 2):
-            if intersect(l1.n1.getR(), l1.n2.getR(), l2.n1.getR(), l2.n2.getR()):
+        Links = self.getLinkList()
+        for l1, l2 in itertools.combinations(Links, 2):
+            if intersect(self.nodes[l1[0], 0], self.nodes[l1[1], 0], self.nodes[l2[0], 0], self.nodes[l2[1], 0]):
                 Xs.append([l1, l2])
-        # print "Xs:", Xs
         while len(Xs) > 0:
             # Counter: count occurence
             # from_iterable: unpack list of lists
             counts = collections.Counter(itertools.chain.from_iterable(Xs))
             # get item most in conflict (highest occurence in list)
-            l = max(counts, key=counts.get)
-            delete_list.append(l)
-            newXs = [x for x in Xs if l not in x]
+            badlink = max(counts, key=counts.get)
+            delete_list.append(badlink)
+            newXs = [x for x in Xs if badlink not in x]
             Xs = newXs
-        for l in delete_list:
-            l.remove()
+        for badlink in delete_list:
+            self.removelink(badlink[0], badlink[1])
 
-    def delLinkList(self):
+    def delLinkList(self, linklist):
         to_del = []
-        for l in self.links:
-            if l.d < l.d0:
-                continue  # compressed links are stable
-            f = np.linalg.norm(l.F1)  # magnitude of force transmitted
-            if hasattr(l, "limit"):
-                p = exp(f / l.limit)
-            else:
-                p = exp(f / self.force_limit)
-            if self.anis > 1e-5:  # horizontal links are more stable
-                p = p * (1 - self.anis + self.anis * pow((l.n1.getR() - l.n2.getR())[1] / l.d, 2))  # what?
-            to_del.append((l, p))
+        for link in linklist:
+            if self.d[link[0], link[1]] < self.d0[link[0], link[1]]:
+                continue            # compressed links are stable
+            f = np.linalg.norm(self.Flink[link[0], link[1]])
+            p = exp(f / self.force_limit)
+            to_del.append((link, p))
         return to_del
 
-    def tryLink(self, n, m):
-        if n.findLinkTo(m) is not None:
+    def tryLink(self, n1, n2, Links):
+        if self.islink[n1, n2] is True:
             return -1, null
-        for l in self.links:
-            if intersect(self.x[n.r], self.x[m.r], self.x[l.n1.r], self.x[l.n2.r]):
+        for l in Links:
+            if intersect(self.nodes[n1, 0], self.nodes[n2, 0], self.nodes[l[0], 0], self.nodes[l[1], 0]):
                 return -1, null  # false
-        e, d = getNormtoo(self.x[n.r] - self.x[m.r])
+        e, d = getNormtoo(self.nodes[n1, 0] - self.nodes[n2, 0])
         if d > self.d0max:
             return -1, null  # false
         return d, e  # true: d>0
 
-    def addLinkList(self):
+    def addLinkList(self, Links):
         to_add = []
-        for i, j in voronoi_neighbors.VoronoiNeighbors(
-                [n.getR() for n in self.nodes], self.d0max, is3D=self.is3d):
-            d, e = self.tryLink(self.nodes[i], self.nodes[j])
+        linkcands = np.transpose(np.where(self.d < self.d0max))
+        for link in linkcands:
+            d, e = self.tryLink(link[0], link[1], Links)
             if d > 1e-5:
-                p = (1 - (d / 2.0)) * (1 - self.anis + self.anis * e[0] * e[0])
-                to_add.append(((self.nodes[i], self.nodes[j]), p))
+                p = (1 - (d / 2.0))
+                to_add.append(((link[0], link[1]), p))
         return to_add
 
     def pickEvent(self, to_del, to_add):
@@ -417,42 +321,36 @@ class Configuration:
         if S < 1e-7:
             print "nothing to do!"
             return 1.
-        dt = -log(random()) / S
+        dt = -log(npr.random()) / S
         if dt > 1:
             print 'Must adjust d0 variables before the next event!'
             return 1.
 
-        r = S * random()
+        r = S * npr.random()
         if r < s1:  # we will remove a link
             for (l, p) in to_del:
                 r = r - p * self.p_del
                 if r < 0:
-                    l.n1.dist = 0
-                    l.n2.dist = 0
-                    l.remove()
+                    self.removelink(l[0], l[1])
                     return dt
         r = r - s1
         if r < s2:  # we will add a link
             for ((n1, n2), p) in to_add:
                 r = r - p * self.p_add
                 if r < 0:
-                    n1.dist = 0
-                    n2.dist = 0
-                    n1.addLinkTo(n2)
+                    self.addlink(n1, n2)
                     return dt
 
     def default_update_d0(self, dt):
-        for l in self.links:
-            l.d0 += 0.2 * (self.d0_0 - l.d0) * dt + 0.05 * (
-                        2 * sqrt(dt) * random() - sqrt(dt))  # magic number 0.2 and 0.05??
+        self.d0 += 0.2 * (self.d0_0 - self.d0) * dt + 0.05 * (
+                   2 * sqrt(dt) * npr.random() - sqrt(dt))              # magic number 0.2 and 0.05??
 
     def modlink(self):
-        self.delAttrDist()
         if self.chkx:
             self.checkLinkX()
-
-        to_del = self.delLinkList()
-        to_add = self.addLinkList()
+        Links = self.getLinkList()
+        to_del = self.delLinkList(Links)
+        to_add = self.addLinkList(Links)
         dt = self.pickEvent(to_del, to_add)
         self.default_update_d0(dt)
         return dt
@@ -475,40 +373,3 @@ class Configuration:
             update_progress(t / tmax)
         if record:
             return configs, ts
-
-
-def checkDir(s):
-    if os.path.exists(s):
-        if not os.path.isdir(s):
-            raise argparse.ArgumentTypeError("%s is not a dir." % s)
-    else:
-        os.makedirs(s)
-    return s
-
-
-def checkFile(s):
-    if os.path.exists(s):
-        if s.strip() == '/dev/stdin':
-            return s
-        if not os.path.isfile(s):
-            raise argparse.ArgumentTypeError("%s is not a file." % s)
-        return s
-    else:
-        argparse.ArgumentTypeError("%s does not exists." % s)
-
-
-def dumpData(configuration, fname):
-    sys.setrecursionlimit(50000)
-    with gzip.GzipFile(fname, 'wb') as out:
-        pickle.dump(configuration, out)
-
-
-def loadData(fname):
-    with gzip.GzipFile(fname, 'rb') as inf:
-        config = pickle.load(inf)
-
-    print >> sys.stderr, "N=", config.N
-    print >> sys.stderr, len(config.x), "dof."
-    print >> sys.stderr, len(config.nodes), "nodes."
-    print >> sys.stderr, len(config.links), "links."
-    return config

@@ -3,6 +3,7 @@
 requires pip, pyhull, numpy
 	sudo apt-get install python-pip python-dev
 	sudo pip install pyhull
+	sudo pip install numpy
 
 	a suitable makefile alternates two programs:
 		cellmech/cellmech.py:	calculates mechanical equilibrium
