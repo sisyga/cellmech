@@ -13,8 +13,6 @@ def VoronoiNeighbors(positions, is3D=False):
     tri = Delaunay(p, qhull_options='QJ')
     # neighbors contain pairs of adjacent particles: [ (a,b), (c,d), ... ]
     neighbors = [list(itertools.combinations(v, 2)) for v in tri.simplices]
-    # neighbors = set([tuple(itertools.combinations(v, 2)) for v in tri.simplices])
-    # neighbors = tri.neighbors
     n = []
     for (i, j) in itertools.chain.from_iterable(neighbors):
         if i < j:
