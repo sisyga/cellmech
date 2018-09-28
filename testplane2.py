@@ -1,27 +1,9 @@
 #!/usr/bin/python  -u
 
 from cell2 import *
-from scipy.spatial import Delaunay
 import cProfile
 
 #######################################################
-
-
-def VoronoiNeighbors(positions, is3D=False):
-    p = [n[:2] for n in positions]
-    # tri: list of interconnectedparticles: [ (a, b, c), (b, c, d), ... ]
-    tri = Delaunay(p, qhull_options='QJ')
-    # neighbors contain pairs of adjacent particles: [ (a,b), (c,d), ... ]
-    neighbors = [list(itertools.combinations(v, 2)) for v in tri.simplices]
-    n = []
-    for (i, j) in itertools.chain.from_iterable(neighbors):
-        if i < j:
-            n.append((i, j))
-        else:
-            n.append((j, i))
-    neighbors = set(n)
-    return neighbors
-
 
 def generatePoint(L):
     X0 = (npr.rand() - .5) * L
@@ -74,14 +56,13 @@ if __name__ == '__main__':
     chkx = True  # check if links overlap?
 
     config = generate_initial_config(Lmax)
+    config.updateDists(config.nodes[:, 0, :])
 
-    for i, j in VoronoiNeighbors([config.nodes[:, 0, :]]):
-        if np.linalg.norm(i - j) <= d0max:
-            n1 = np.where(config.nodes == i)
-            n2 = np.where(config.nodes == j)
-            config.addlink(n1, n2)
+    for i, j in voronoi_neighbors.VoronoiNeighbors2(config.nodes[:, 0, :]):
+        if np.linalg.norm(config.nodes[i, 0] - config.nodes[j, 0]) <= d0max:
+            config.addlink(i, j)
 
     cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
-    # configs, ts = c.timeevo(200, record=True)
+    # configs, ts = config.timeevo(200, record=True)
     # animateconfigs(configs, ts=ts)
     # mlab.show()

@@ -3,6 +3,7 @@ import itertools
 # from pyhull.delaunay import DelaunayTri
 from scipy.spatial import Delaunay, delaunay_plot_2d
 from matplotlib import pyplot as plt
+import sys
 
 # describing a plane through point P with normal vector n
 # P = (px, py, pz)
@@ -83,6 +84,21 @@ def VoronoiNeighbors(positions, d0max, is3D=False):
     # else:
     #    return neighbors
 
+
+def VoronoiNeighbors2(positions):
+    p = [n[:2] for n in positions]
+    # tri: list of interconnectedparticles: [ (a, b, c), (b, c, d), ... ]
+    tri = Delaunay(p, qhull_options='QJ')
+    # neighbors contain pairs of adjacent particles: [ (a,b), (c,d), ... ]
+    neighbors = [list(itertools.combinations(v, 2)) for v in tri.simplices]
+    n = []
+    for (i, j) in itertools.chain.from_iterable(neighbors):
+        if i < j:
+            n.append((i, j))
+        else:
+            n.append((j, i))
+    neighbors = set(n)
+    return neighbors
 
 # http://stackoverflow.com/questions/419163/what-does-if-name-main-do
 
