@@ -1,6 +1,6 @@
 # cellmech
 <pre>
-requires pip, pyhull
+requires pip, pyhull, numpy
 	sudo apt-get install python-pip python-dev
 	sudo pip install pyhull
 
