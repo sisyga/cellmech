@@ -1,7 +1,5 @@
 #!/usr/bin/python  -u
 
-PYTHONUNBUFFERED = 1
-
 import argparse
 import collections
 import copy
@@ -26,6 +24,7 @@ ex = np.array([1.0, 0.0, 0.0])
 ey = np.array([0.0, 1.0, 0.0])
 ez = np.array([0.0, 0.0, 1.0])
 
+
 def ccw(A, B, C):
     return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
 
@@ -39,6 +38,7 @@ def getNormvec(v):
         pass
     return v
 
+
 def getNormtoo(v):
     # returns norm of v and normalized v
     d = np.linalg.norm(v)
@@ -47,6 +47,7 @@ def getNormtoo(v):
     except RuntimeWarning:
         d = 0
     return v, d
+
 
 def intersect(A, B, C, D):
     if np.linalg.norm(A - C) < 0.01:
@@ -58,15 +59,25 @@ def intersect(A, B, C, D):
     return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
 
 
-def R(dphi, v):
-    axis, theta = getNormtoo(dphi)
-    if theta < 1e-6:
-        return v
-    a = np.cos(theta / 2)
-    b, c, d = axis * np.sin(theta / 2)
-    return np.dot(np.array([[a * a + b * b - c * c - d * d, 2 * (b * c - a * d), 2 * (b * d + a * c)],
-                            [2 * (b * c + a * d), a * a + c * c - b * b - d * d, 2 * (c * d - a * b)],
-                            [2 * (b * d - a * c), 2 * (c * d + a * b), a * a + d * d - b * b - c * c]]), v)
+def getRotMatArray(Phis):
+    Thetas = np.linalg.norm(Phis)
+    Thetas[np.where(Thetas == 0)] = np.inf
+    Axes = Phis / Thetas[..., None]
+    a = np.cos(Thetas / 2)
+    b, c, d = np.transpose(Axes) * np.sin(Thetas / 2)
+    RotMat = np.array([[a * a + b * b - c * c - d * d, 2 * (b * c - a * d), 2 * (b * d + a * c)],
+                      [2 * (b * c + a * d), a * a + c * c - b * b - d * d, 2 * (c * d - a * b)],
+                      [2 * (b * d - a * c), 2 * (c * d + a * b), a * a + d * d - b * b - c * c]])
+    return np.transpose(RotMat, axes=(2, 0, 1))
+
+
+def getRotMat(Phis):
+    Axis, Theta = getNormtoo(Phis)
+    a = np.cos(Theta / 2)
+    b, c, d = Axis * np.sin(Theta / 2)
+    return np.array([[a * a + b * b - c * c - d * d, 2 * (b * c - a * d), 2 * (b * d + a * c)],
+                    [2 * (b * c + a * d), a * a + c * c - b * b - d * d, 2 * (c * d - a * b)],
+                    [2 * (b * d - a * c), 2 * (c * d + a * b), a * a + d * d - b * b - c * c]])
 
 
 def update_progress(progress):
@@ -204,7 +215,7 @@ class Configuration:
 
         """description of links"""
         # islink[i, j] is True if nodes i and j are connected via link
-        self.islink = np.full((self.N, self.N), False)
+        self.islink = np.full((self.N, self.N), False)  # Describes link at node [0] leading to node [1]
 
         self.e = np.zeros((self.N, self.N, 3))          # direction connecting nodes (a.k.a. "actual direction")
         self.d = np.zeros((self.N, self.N))             # distance between nodes (a.k.a. "actual distance")
@@ -218,12 +229,8 @@ class Configuration:
         self.Flink = np.zeros((self.N, self.N, 3))      # Force from link on node
 
     def addlink(self, n1, n2, t1=None, t2=None, d0=None, k=None, bend=None, twist=None, n=None, norm1=None, norm2=None):
-        if n1 > n2:
-            ni = n1
-            mi = n2
-        else:
-            ni = n2
-            mi = n1
+        ni = n1
+        mi = n2
 
         self.islink[ni, mi], self.islink[mi, ni] = True, True
 
@@ -239,12 +246,14 @@ class Configuration:
             d0 = self.d[ni, mi]
         self.d0[ni, mi], self.d0[mi, ni] = d0, d0  # equilibrium distance
         # preferred directions
+        RotMat1 = getRotMat(-self.nodes[ni, 1])
+        RotMat2 = getRotMat(-self.nodes[mi, 1])
         if t1 is None:
-            self.t[ni, mi] = R(-self.nodes[ni, 1], self.e[ni, mi])
+            self.t[ni, mi] = np.dot(RotMat1, self.e[ni, mi])
         else:
             self.t[ni, mi] = getNormvec(t1)
         if t2 is None:
-            self.t[mi, ni] = R(-self.nodes[mi, 1], -self.e[ni, mi])
+            self.t[mi, ni] = np.dot(RotMat2, self.e[mi, ni])
         else:
             self.t[mi, ni] = getNormvec(t2)
         if n is None:
@@ -253,19 +262,16 @@ class Configuration:
             if q < 1e-5:
                 n = getNormvec(np.cross(self.e[ni, mi], ex))  # e || ez   =>	n is perpendicular to x
         if norm1 is None:
-            norm1 = n
+            norm1 = np.dot(RotMat1, n)
         self.norm[ni, mi] = norm1
         if norm2 is None:
-            norm2 = n
+            norm2 = np.dot(RotMat2, n)
         self.norm[mi, ni] = norm2
 
     def removelink(self, n1, n2):
-        if n1 > n2:
-            ni = n1
-            mi = n2
-        else:
-            ni = n2
-            mi = n1
+        ni = n1
+        mi = n2
+
         self.islink[ni, mi], self.islink[mi, ni] = False, False
         self.Flink[ni, mi], self.Flink[mi, ni], self.Mlink[ni, mi], self.Mlink[mi, ni] = null, null, null, null
 
@@ -277,11 +283,10 @@ class Configuration:
         self.e = dX / self.d[..., None]
 
     def compactStuffINeed(self):
-        #get only those parts of the big arrays that are actually needed
-
+        # get only those parts of the big arrays that are actually needed
         t = self.norm[self.islink]
-        norm  = self.norm[self.islink]
-        normT = norm.transpose(norm, axes = (1, 0, 2))
+        norm = self.norm[self.islink]
+        normT = norm.transpose(norm, axes=(1, 0, 2))
         bend = self.bend[self.islink]
         twist = self.twist[self.islink]
         k = self.k[self.islink]
@@ -291,29 +296,32 @@ class Configuration:
         return t, norm, normT, bend, twist, k, d0, nodeinds
 
     def updateLinkForces(self, X, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-
         Nodes = X[Nodeinds[0]]
         NodesT = X[Nodeinds[1]]
         E = self.e[self.islink]
         D = self.d[self.islink]
+        RotMat = getRotMatArray(Nodes[:, 1, :])
+        RotMatT = getRotMatArray(NodesT[:, 1, :])
 
-        Norm2 = np.cross(R(Nodes[1], Norm), E)
+        NormRot = np.einsum("ijk, ik -> ij", RotMat, Norm)
 
-        self.Mlink[self.islink] = Bend * np.cross(R(Nodes[1], T), E) + \
-                              Twist * np.cross(R(Nodes[1], Norm), R(NodesT[1], NormT))  # Eqs. 5, 6
+        Norm2 = np.cross(NormRot, E)
 
-        M = self.Mlink + np.transpose(self.Mlink, axes = (1, 0, 2))
+        self.Mlink[self.islink] = Bend * np.cross(np.einsum("ijk, ik -> ij", RotMat, T), E) + \
+            Twist * np.cross(NormRot, np.einsum("ijk, ik -> ij", RotMatT, NormT))  # Eqs. 5, 6
+
+        M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
 
         self.Flink[self.islink] = np.dot(M[self.islink], Norm2 - Norm) / D[:, None] + \
-                              K * (D  - D0)   # Eqs. 13, 14, 15
+            K * (D - D0)   # Eqs. 13, 14, 15
 
     def getForces(self, t, X, norm, normT, bend, twist, k, d0, nodeinds):
         self.updateDists(X)
         self.updateLinkForces(X, t, norm, normT, bend, twist, k, d0, nodeinds)
-        self.Fnode = np.sum(self.Flink, axis = 1)
-        self.Mnode = np.sum(self.Flink, axis = 1)
+        self.Fnode = np.sum(self.Flink, axis=1)
+        self.Mnode = np.sum(self.Flink, axis=1)
 
-        return np.transpose(np.array([self.Fnode, self.Mnode]), axes = (1, 0, 2))
+        return np.transpose(np.array([self.Fnode, self.Mnode]), axes=(1, 0, 2))
 
     def mechEquilibrium(self):
         x = self.nodes.copy()
