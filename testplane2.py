@@ -1,9 +1,11 @@
 #!/usr/bin/python  -u
 
 from cell2 import *
-import cProfile
+
+npr.seed(seed=0)
 
 #######################################################
+
 
 def generatePoint(L):
     X0 = (npr.rand() - .5) * L
@@ -62,7 +64,7 @@ if __name__ == '__main__':
         if np.linalg.norm(config.nodes[i, 0] - config.nodes[j, 0]) <= d0max:
             config.addlink(i, j)
 
-    cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
-    # configs, ts = config.timeevo(200, record=True)
-    # animateconfigs(configs, ts=ts)
-    # mlab.show()
+    # cProfile.run('config.timeevo(2, record=True)', sort='tottime')
+    configs, links, nodeforces, linkforces, ts = config.timeevo(2, record=True)
+    animatemyconfigs(configs, links, nodeforces, linkforces, ts)
+    mlab.show()

@@ -1,8 +1,11 @@
 #!/usr/bin/python  -u
 
+import cProfile
+
 from cell import *
 from voronoi_neighbors import *
-import cProfile
+
+np.random.seed(seed=0)
 
 #######################################################
 
@@ -87,6 +90,6 @@ if __name__ == '__main__':
             c.nodes[i].addLinkTo(c.nodes[j])
 
     cProfile.run('c.timeevo(2, record=True)', sort='cumtime')
-    # configs, ts = c.timeevo(200, record=True)
+    # configs, ts = c.timeevo(2, record=True)
     # animateconfigs(configs, ts=ts)
     # mlab.show()

@@ -1,14 +1,14 @@
 #!/usr/bin/python  -u
 
-import collections
-import copy
 import itertools
 import sys
-from math import exp, log, sqrt
 import warnings
+from math import exp, log, sqrt
+
 import numpy as np
 import numpy.random as npr
-import voronoi_neighbors
+import scipy.linalg
+from mayavi import mlab
 
 warnings.filterwarnings("error")
 
@@ -24,7 +24,7 @@ def ccw(A, B, C):
 
 def getNormvec(v):
     # returns normalized v
-    d = np.linalg.norm(v)
+    d = scipy.linalg.norm(v)
     try:
         v = v/d
     except RuntimeWarning:
@@ -34,7 +34,7 @@ def getNormvec(v):
 
 def getNormtoo(v):
     # returns norm of v and normalized v
-    d = np.linalg.norm(v)
+    d = scipy.linalg.norm(v)
     try:
         v = v/d
     except RuntimeWarning:
@@ -43,17 +43,14 @@ def getNormtoo(v):
 
 
 def intersect(A, B, C, D):
-    if np.linalg.norm(A - C) < 0.01:
-        return False
-    if np.linalg.norm(A - D) < 0.01:
-        return False
-    if np.linalg.norm(B - C) < 0.01:
+    mynorm = scipy.linalg.norm(np.array([A - C, A - D, B - C]), axis=1)
+    if (mynorm < 0.01).any():
         return False
     return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
 
 
 def getRotMatArray(Phis):
-    Thetas = np.linalg.norm(Phis, axis = 1)
+    Thetas = scipy.linalg.norm(Phis, axis=1)
     ThetaDiv = Thetas.copy()
     ThetaDiv[np.where(Thetas == 0)] = np.inf
     Axes = Phis / ThetaDiv[..., None]
@@ -100,9 +97,56 @@ def update_progress(progress):
     sys.stdout.flush()
 
 
+def showconfig(configs, links, nodeforces, linkforces, cmap='viridis', vmaxlinks=5, vmaxcells=5, cbar=False):
+    # if figure is None:
+    #     fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
+    # else:
+    #     fig = figure
+    x, y, z = configs.T
+    xl, yl, zl = configs[links[0]].T
+    rxl, ryl, rzl = (configs[links[1]] - configs[links[0]]).T
+    fc = scipy.linalg.norm(nodeforces, axis=1)
+    fl = scipy.linalg.norm(linkforces, axis=1)
+
+    cells = mlab.points3d(x, y, z, fc, scale_factor=1, opacity=0.5, resolution=16, scale_mode='none', vmin=0.,
+                          colormap=cmap, vmax=vmaxcells)
+    links = mlab.quiver3d(xl, yl, zl, rxl, ryl, rzl, scalars=fl, mode='2ddash', line_width=4., scale_mode='vector',
+                          scale_factor=1, colormap=cmap, vmin=0., vmax=vmaxlinks)
+    links.glyph.color_mode = "color_by_scalar"
+    if cbar:
+        mlab.scalarbar(links, nb_labels=2, title='Force on link')
+    return cells, links
+
+
+@mlab.animate(delay=100)
+def animatemyconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bgcolor=(1, 1, 1),
+                     fgcolor=(0, 0, 0), figsize=(1000, 1000)):
+    mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
+    vmaxcells = max(scipy.linalg.norm(nodeForces, axis=2))
+    vmaxlinks = max([max(scipy.linalg.norm(flinklist, axis=1)) for flinklist in linkForces])
+    cells, links = showconfig(Configs[0], Links[0], nodeForces[0], linkForces[0],
+                              vmaxcells=vmaxcells, vmaxlinks=vmaxlinks)
+    text = mlab.title('0.0', height=.9)
+    # (cells.mlab_source.x.max(), cells.mlab_source.y.max(), cells.mlab_source.z.max(), '0.0')
+
+    while True:
+        for (c, l, nF, lF, t) in zip(Configs[1:], Links, nodeForces, linkForces, ts[1:]):
+            x, y, z = c.T
+            xl, yl, zl = c[l[0]].T
+            rxl, ryl, rzl = (c[Links[1]] - c[l[0]]).T
+            fc = scipy.linalg.norm(nF, axis=1)
+            fl = scipy.linalg.norm(lF, axis=1)
+
+            cells.mlab_source.set(x=x, y=y, z=z, scalars=fc)
+            links.mlab_source.reset(x=xl, y=yl, z=zl, u=rxl, v=ryl, w=rzl, scalars=fl)
+            text.set(text='{}'.format(round(t, 2)))
+            print 'Updating... '
+            yield
+
+
 class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
-                 p_del=0.2, chkx=True, anis=0.0, d0max=2., unrestricted=True, distlimit=3):
+                 p_del=0.2, chkx=True, anis=0.0, d0max=2.):
         # parameters for mechanical equilibration
         self.dt = dt
         self.nmax = nmax
@@ -115,15 +159,19 @@ class Configuration:
         self.chkx = chkx
         self.anis = anis
         self.d0max = d0max
-        # parameters to restrict mech. equilibration to surrounding of changed link
-        self.unrestricted = unrestricted
-        self.distlimit = distlimit
         # variables to store cell number and cell positions and angles
         self.N = num
         self.ones = np.ones(self.N)
 
+        """stuff for documentation"""
+        self.nodesnap = []
+        self.linksnap = []
+        self.fnodesnap = []
+        self.flinksnap = []
+        self.snaptimes = []
+
         """description of nodes"""
-        self.nodes = np.zeros((self.N, 2, 3))           # r and phi of nodes
+        self.nodes = np.zeros((self.N, 2, 3))  # r and phi of nodes in structure [whichnode][r/phi][x/y/z]
         self.Fnode = np.zeros((self.N, 3))              # total force on node
         self.Mnode = np.zeros((self.N, 3))              # total torsion on node
 
@@ -192,7 +240,7 @@ class Configuration:
     def updateDists(self, X):
 
         dX = X - np.tile(np.expand_dims(X, 1), (1, X.shape[0], 1))
-        self.d = np.linalg.norm(dX, axis=2)
+        self.d = scipy.linalg.norm(dX, axis=2)
         inds = np.where(self.d == 0)
         self.d[inds] = np.infty
         self.e = dX / self.d[..., None]
@@ -220,8 +268,8 @@ class Configuration:
 
         NormRot = np.einsum("ijk, ik -> ij", RotMat, Norm)
 
-        self.Mlink[self.islink] = Bend[:, None] * np.cross(np.einsum("ijk, ik -> ij", RotMat, T), E)  + \
-            Twist[:, None] * np.cross(NormRot, np.einsum("ijk, ik -> ij", RotMatT, NormT))  # Eqs. 5, 6
+        self.Mlink[self.islink] = Bend[:, None] * np.cross(np.einsum("ijk, ik -> ij", RotMat, T), E) + \
+                                  Twist[:, None] * np.cross(NormRot, np.einsum("ijk, ik -> ij", RotMatT, NormT))  # Eqs. 5, 6
 
         M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
 
@@ -242,19 +290,21 @@ class Configuration:
     def mechEquilibrium(self):
         x = self.nodes.copy()
         h = self.dt
-        steps = self.nmax
+        steps = 0
         t, norm, normT, bend, twist, k, d0, nodeinds = self.compactStuffINeed()
         for i in range(self.nmax):
             k1 = self.getForces(x, t, norm, normT, bend, twist, k, d0, nodeinds)
             Q = np.einsum("ijk, ijk", k1, k1) / self.N
             if Q < self.qmin:
-                steps = i + 1
+                print "broke"
                 break
             k1 *= h
             k2 = h * self.getForces(x + k1 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
             k3 = h * self.getForces(x + k2 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
             k4 = h * self.getForces(x + k3, t, norm, normT, bend, twist, k, d0, nodeinds)
             x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
+            steps += 1
+        print "Q = ", Q
         self.nodes = x
         return steps * h
 
@@ -270,13 +320,16 @@ class Configuration:
             if intersect(self.nodes[l1[0], 0], self.nodes[l1[1], 0], self.nodes[l2[0], 0], self.nodes[l2[1], 0]):
                 Xs.append([l1, l2])
         while len(Xs) > 0:
-            # Counter: count occurence
-            # from_iterable: unpack list of lists
-            counts = collections.Counter(itertools.chain.from_iterable(Xs))
-            # get item most in conflict (highest occurence in list)
-            badlink = max(counts, key=counts.get)
+            Xsflat = np.array(Xs).reshape(2 * len(Xs), 2)
+            # u: unique elements in Xsflat (a.k.a. links), count: number of occurences in Xsflat
+            u, count = np.unique(Xsflat, axis=0, return_counts=True)
+            badlink = u[np.argmax(count)]
             delete_list.append(badlink)
-            newXs = [x for x in Xs if badlink not in x]
+            newXs = []
+            for linkpair in Xs:
+                if (badlink == linkpair[0]).all() or (badlink == linkpair[1]).all():
+                    continue
+                newXs.append(linkpair)
             Xs = newXs
         for badlink in delete_list:
             self.removelink(badlink[0], badlink[1])
@@ -286,7 +339,7 @@ class Configuration:
         for link in linklist:
             if self.d[link[0], link[1]] < self.d0[link[0], link[1]]:
                 continue            # compressed links are stable
-            f = np.linalg.norm(self.Flink[link[0], link[1]])
+            f = scipy.linalg.norm(self.Flink[link[0], link[1]])
             p = exp(f / self.force_limit)
             to_del.append((link, p))
         return to_del
@@ -358,21 +411,34 @@ class Configuration:
         self.default_update_d0(dt)
         return dt
 
+    def makesnap(self, t):
+        self.nodesnap.append(self.nodes[:, 0, :].copy())
+        self.fnodesnap.append(self.Fnode.copy())
+        linkList = self.getLinkList()
+        self.linksnap.append(linkList)
+        self.flinksnap.append(self.Flink[linkList])
+        self.snaptimes.append(t)
+
     def timeevo(self, tmax, record=False):
-        configs, ts = [copy.deepcopy(self)], [0.]
         t = 0.
+        if record:
+            self.makesnap(0)
         while t < tmax:
             dt = self.mechEquilibrium()
+            print "equil: dt = ", dt
             t += dt
+            print "t = ", t
             if record:
-                configs.append(copy.deepcopy(self))
-                ts.append(t)
+                self.makesnap(t)
             dt = self.modlink()
-            update_progress(t / tmax)
+            # update_progress(t / tmax)
+            print "modify: dt = ", dt
             t += dt
+            print "t = ", t
             if record:
-                configs.append(copy.deepcopy(self))
-                ts.append(t)
-            update_progress(t / tmax)
+                self.makesnap(t)
+            # update_progress(t / tmax)
         if record:
-            return configs, ts
+            self.nodesnap = np.array(self.nodesnap)
+            self.fnodesnap = np.array(self.fnodesnap)
+            return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
