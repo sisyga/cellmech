@@ -8,6 +8,7 @@ from math import exp, log, sqrt
 import numpy as np
 import numpy.random as npr
 import scipy.linalg
+import voronoi_neighbors
 from mayavi import mlab
 
 warnings.filterwarnings("error")
