@@ -377,7 +377,6 @@ def animateconfigs(configs, ts=None, figureindex=0, bgcolor=(1, 1, 1), fgcolor=(
             print 'Updating... '
             yield
 
-
 class node(object):
     def __init__(self, config, r, r0=None, state=-1):
 

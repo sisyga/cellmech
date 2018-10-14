@@ -98,11 +98,12 @@ def update_progress(progress):
     sys.stdout.flush()
 
 
-def showconfig(configs, links, nodeforces, fl, cmap='viridis', vmaxlinks=5, vmaxcells=5, cbar=False):
-    # if figure is None:
-    #     fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
-    # else:
-    #     fig = figure
+def showconfig(configs, links, nodeforces, fl, figure=None, figureindex = 0, bgcolor=(1, 1, 1), fgcolor=(0, 0, 0),
+               figsize=(1000, 1000), cmap='viridis', vmaxlinks=5, vmaxcells=5, cbar=False):
+    if figure is None:
+         fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
+    else:
+         fig = figure
     x, y, z = configs.T
     xl, yl, zl = configs[links[..., 0]].T
     rxl, ryl, rzl = (configs[links[..., 1]] - configs[links[..., 0]]).T
@@ -121,11 +122,10 @@ def showconfig(configs, links, nodeforces, fl, cmap='viridis', vmaxlinks=5, vmax
 @mlab.animate(delay=100)
 def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bgcolor=(1, 1, 1),
                      fgcolor=(0, 0, 0), figsize=(1000, 1000), cmap='viridis', cbar=False):
-
-    mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
+    fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
     vmaxcells = np.max(scipy.linalg.norm(nodeForces, axis=2))
     vmaxlinks = np.max(linkForces)
-    cells, links = showconfig(Configs[0], Links[0], nodeForces[0], linkForces[0],
+    cells, links = showconfig(Configs[0], Links[0], nodeForces[0], linkForces[0], fig,
                               vmaxcells=vmaxcells, vmaxlinks=vmaxlinks)
     text = mlab.title('0.0', height=.9)
 
