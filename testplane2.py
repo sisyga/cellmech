@@ -66,5 +66,5 @@ if __name__ == '__main__':
 
     # cProfile.run('config.timeevo(2, record=True)', sort='tottime')
     configs, links, nodeforces, linkforces, ts = config.timeevo(2, record=True)
-    animatemyconfigs(configs, links, nodeforces, linkforces, ts)
-    mlab.show()
+    animateconfigs(configs, links, nodeforces, linkforces, ts)
+    # mlab.show()

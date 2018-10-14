@@ -98,16 +98,15 @@ def update_progress(progress):
     sys.stdout.flush()
 
 
-def showconfig(configs, links, nodeforces, linkforces, cmap='viridis', vmaxlinks=5, vmaxcells=5, cbar=False):
+def showconfig(configs, links, nodeforces, fl, cmap='viridis', vmaxlinks=5, vmaxcells=5, cbar=False):
     # if figure is None:
     #     fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
     # else:
     #     fig = figure
     x, y, z = configs.T
-    xl, yl, zl = configs[links[0]].T
-    rxl, ryl, rzl = (configs[links[1]] - configs[links[0]]).T
+    xl, yl, zl = configs[links[..., 0]].T
+    rxl, ryl, rzl = (configs[links[..., 1]] - configs[links[..., 0]]).T
     fc = scipy.linalg.norm(nodeforces, axis=1)
-    fl = scipy.linalg.norm(linkforces, axis=1)
 
     cells = mlab.points3d(x, y, z, fc, scale_factor=1, opacity=0.5, resolution=16, scale_mode='none', vmin=0.,
                           colormap=cmap, vmax=vmaxcells)
@@ -120,29 +119,29 @@ def showconfig(configs, links, nodeforces, linkforces, cmap='viridis', vmaxlinks
 
 
 @mlab.animate(delay=100)
-def animatemyconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bgcolor=(1, 1, 1),
-                     fgcolor=(0, 0, 0), figsize=(1000, 1000)):
+def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bgcolor=(1, 1, 1),
+                     fgcolor=(0, 0, 0), figsize=(1000, 1000), cmap='viridis', cbar=False):
+
     mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
-    vmaxcells = max(scipy.linalg.norm(nodeForces, axis=2))
-    vmaxlinks = max([max(scipy.linalg.norm(flinklist, axis=1)) for flinklist in linkForces])
+    vmaxcells = np.max(scipy.linalg.norm(nodeForces, axis=2))
+    vmaxlinks = np.max(linkForces)
     cells, links = showconfig(Configs[0], Links[0], nodeForces[0], linkForces[0],
                               vmaxcells=vmaxcells, vmaxlinks=vmaxlinks)
     text = mlab.title('0.0', height=.9)
-    # (cells.mlab_source.x.max(), cells.mlab_source.y.max(), cells.mlab_source.z.max(), '0.0')
 
     while True:
-        for (c, l, nF, lF, t) in zip(Configs[1:], Links, nodeForces, linkForces, ts[1:]):
+        for (c, l, nF, fl, t) in zip(Configs[1:], Links[1:], nodeForces[1:], linkForces[1:], ts[1:]):
             x, y, z = c.T
-            xl, yl, zl = c[l[0]].T
-            rxl, ryl, rzl = (c[Links[1]] - c[l[0]]).T
+            xl, yl, zl = c[l[..., 0]].T
+            rxl, ryl, rzl = (c[l[..., 1]] - c[l[..., 0]]).T
             fc = scipy.linalg.norm(nF, axis=1)
-            fl = scipy.linalg.norm(lF, axis=1)
 
             cells.mlab_source.set(x=x, y=y, z=z, scalars=fc)
             links.mlab_source.reset(x=xl, y=yl, z=zl, u=rxl, v=ryl, w=rzl, scalars=fl)
             text.set(text='{}'.format(round(t, 2)))
             print 'Updating... '
             yield
+
 
 
 class Configuration:
@@ -417,7 +416,7 @@ class Configuration:
         self.fnodesnap.append(self.Fnode.copy())
         linkList = self.getLinkList()
         self.linksnap.append(linkList)
-        self.flinksnap.append(self.Flink[linkList])
+        self.flinksnap.append(scipy.linalg.norm(self.Flink[linkList[..., 0], linkList[..., 1]], axis = 1))
         self.snaptimes.append(t)
 
     def timeevo(self, tmax, record=False):
