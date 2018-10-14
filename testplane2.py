@@ -25,7 +25,7 @@ def generate_initial_config(L=10, N=None):
 
     for ni in range(N):
         while True:
-            R1 = rand3d(L)
+            R1 = generatePoint(L)
             OK = True
             for nj in range(ni):
                 d = np.linalg.norm(c.nodes[nj][0] - R1)

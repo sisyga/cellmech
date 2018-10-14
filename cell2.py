@@ -12,6 +12,7 @@ import voronoi_neighbors
 from mayavi import mlab
 
 warnings.filterwarnings("error")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 null = np.array([0.0, 0.0, 0.0])
 ex = np.array([1.0, 0.0, 0.0])
@@ -124,7 +125,7 @@ def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bg
                      fgcolor=(0, 0, 0), figsize=(1000, 1000), cmap='viridis', cbar=False):
     fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
     vmaxcells = np.max(scipy.linalg.norm(nodeForces, axis=2))
-    vmaxlinks = np.max(linkForces)
+    vmaxlinks = max([np.max(timestep) for timestep in linkForces])
     cells, links = showconfig(Configs[0], Links[0], nodeForces[0], linkForces[0], fig,
                               vmaxcells=vmaxcells, vmaxlinks=vmaxlinks)
     text = mlab.title('0.0', height=.9)
