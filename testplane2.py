@@ -1,6 +1,7 @@
 #!/usr/bin/python  -u
 
 from cell2 import *
+import cProfile
 
 npr.seed(seed=0)
 
@@ -28,13 +29,13 @@ def generate_initial_config(L=10, N=None):
             R1 = generatePoint(L)
             OK = True
             for nj in range(ni):
-                d = np.linalg.norm(c.nodes[nj][0] - R1)
+                d = np.linalg.norm(c.nodes[nj] - R1)
                 if d < d0min:
                     OK = False
                     break
             if OK:
                 break
-        c.nodes[ni][0] = R1
+        c.nodes[ni] = R1
 
     return c
 
@@ -64,7 +65,7 @@ if __name__ == '__main__':
         if np.linalg.norm(config.nodes[i, 0] - config.nodes[j, 0]) <= d0max:
             config.addlink(i, j)
 
-    # cProfile.run('config.timeevo(2, record=True)', sort='tottime')
+    # cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
     configs, links, nodeforces, linkforces, ts = config.timeevo(2, record=True)
     animateconfigs(configs, links, nodeforces, linkforces, ts)
     mlab.show()

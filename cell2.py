@@ -7,11 +7,12 @@ from math import exp, log, sqrt
 
 import numpy as np
 import numpy.random as npr
+import numpy.ma as ma
 import scipy.linalg
 import voronoi_neighbors
 from mayavi import mlab
 
-warnings.filterwarnings("error")
+# warnings.filterwarnings("error")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 null = np.array([0.0, 0.0, 0.0])
@@ -122,7 +123,7 @@ def showconfig(configs, links, nodeforces, fl, figure=None, figureindex = 0, bgc
 
 @mlab.animate(delay=100)
 def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bgcolor=(1, 1, 1),
-                     fgcolor=(0, 0, 0), figsize=(1000, 1000), cmap='viridis', cbar=False):
+                   fgcolor=(0, 0, 0), figsize=(1000, 1000), cmap='viridis', cbar=False):
     fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
     vmaxcells = np.max(scipy.linalg.norm(nodeForces, axis=2))
     vmaxlinks = max([np.max(timestep) for timestep in linkForces])
@@ -147,8 +148,11 @@ def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bg
 
 class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
-                 p_del=0.2, chkx=True, anis=0.0, d0max=2.):
+                 p_del=0.2, chkx=True, anis=0.0, d0max=2., dims=3):
         # parameters for mechanical equilibration
+        if dims != 2 and dims != 3:
+            print "Oops! Wrong number of dimensions here."
+            sys.exit()
         self.dt = dt
         self.nmax = nmax
         self.qmin = qmin
@@ -172,15 +176,16 @@ class Configuration:
         self.snaptimes = []
 
         """description of nodes"""
-        self.nodes = np.zeros((self.N, 2, 3))  # r and phi of nodes in structure [whichnode][r/phi][x/y/z]
-        self.Fnode = np.zeros((self.N, 3))              # total force on node
-        self.Mnode = np.zeros((self.N, 3))              # total torsion on node
+        self.nodesX = np.zeros((self.N, dims))             # r of nodes
+        self.nodesPhi = np.zeros((self.N, 3))           # phi of nodes
+        self.Fnode = np.zeros((self.N, dims))              # total force on node
+        self.Mnode = np.zeros((self.N, dims))              # total torsion on node
 
         """description of links"""
         # islink[i, j] is True if nodes i and j are connected via link
         self.islink = np.full((self.N, self.N), False)  # Describes link at node [0] leading to node [1]
 
-        self.e = np.zeros((self.N, self.N, 3))          # direction connecting nodes (a.k.a. "actual direction")
+        self.e = np.zeros((self.N, self.N, dims))          # direction connecting nodes (a.k.a. "actual direction")
         self.d = np.zeros((self.N, self.N))             # distance between nodes (a.k.a. "actual distance")
         self.k = np.zeros((self.N, self.N))             # spring constant between nodes
         self.bend = 10. * np.ones((self.N, self.N))       # bending rigidity
@@ -209,8 +214,8 @@ class Configuration:
             d0 = self.d[ni, mi]
         self.d0[ni, mi], self.d0[mi, ni] = d0, d0  # equilibrium distance
         # preferred directions
-        RotMat1 = getRotMat(-self.nodes[ni, 1])
-        RotMat2 = getRotMat(-self.nodes[mi, 1])
+        RotMat1 = getRotMat(-self.nodesPhi[ni])
+        RotMat2 = getRotMat(-self.nodesPhi[mi])
         if t1 is None:
             self.t[ni, mi] = np.dot(RotMat1, self.e[ni, mi])
         else:
@@ -239,7 +244,6 @@ class Configuration:
         self.Flink[ni, mi], self.Flink[mi, ni], self.Mlink[ni, mi], self.Mlink[mi, ni] = null, null, null, null
 
     def updateDists(self, X):
-
         dX = X - np.tile(np.expand_dims(X, 1), (1, X.shape[0], 1))
         self.d = scipy.linalg.norm(dX, axis=2)
         inds = np.where(self.d == 0)
@@ -259,13 +263,13 @@ class Configuration:
 
         return t, norm, normT, bend, twist, k, d0, nodeinds
 
-    def updateLinkForces(self, X, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-        Nodes = X[Nodeinds[0]]
-        NodesT = X[Nodeinds[1]]
+    def updateLinkForces(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+        NodesPhi = PHI[Nodeinds[0]]
+        NodesPhiT = PHI[Nodeinds[1]]
         E = self.e[self.islink]
         D = self.d[self.islink]
-        RotMat = getRotMatArray(Nodes[:, 1, :])
-        RotMatT = getRotMatArray(NodesT[:, 1, :])
+        RotMat = getRotMatArray(NodesPhi)
+        RotMatT = getRotMatArray(NodesPhiT)
 
         NormRot = np.einsum("ijk, ik -> ij", RotMat, Norm)
 
@@ -280,33 +284,39 @@ class Configuration:
                                   (np.einsum("ij, ij -> i", M[self.islink], Norm2Rot) / D)[:, None] * NormRot + \
                                   (K * (D - D0))[:, None] * E   # Eqs. 13, 14, 15
 
-    def getForces(self, X, t, norm, normT, bend, twist, k, d0, nodeinds):
-        self.updateDists(X[:, 0, :])
-        self.updateLinkForces(X, t, norm, normT, bend, twist, k, d0, nodeinds)
+    def getForces(self, X, Phi, t, norm, normT, bend, twist, k, d0, nodeinds):
+        self.updateDists(X)
+        self.updateLinkForces(Phi, t, norm, normT, bend, twist, k, d0, nodeinds)
         self.Fnode = np.sum(self.Flink, axis=1)
         self.Mnode = np.sum(self.Flink, axis=1)
 
-        return np.transpose(np.array([self.Fnode, self.Mnode]), axes=(1, 0, 2))
+        return self.Fnode, self.Mnode
 
     def mechEquilibrium(self):
-        x = self.nodes.copy()
+        x = self.nodesX.copy()
+        phi = self.nodesPhi.copy()
         h = self.dt
         steps = 0
         t, norm, normT, bend, twist, k, d0, nodeinds = self.compactStuffINeed()
         for i in range(self.nmax):
-            k1 = self.getForces(x, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
             Q = np.einsum("ijk, ijk", k1, k1) / self.N
             if Q < self.qmin:
                 print "broke"
                 break
-            k1 *= h
-            k2 = h * self.getForces(x + k1 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
-            k3 = h * self.getForces(x + k2 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
-            k4 = h * self.getForces(x + k3, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k1, j1 = h * k1, h * j1
+            k2, j2 = self.getForces(x + k1 / 2, phi + j1 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k2, j2 = h * k2, h * j2
+            k3, j3 = self.getForces(x + k2 / 2, phi + j2 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k3, j3 = h * k3, h * j3
+            k4, j4 = self.getForces(x + k3, phi + j3, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k4, j4 = h * k4, h * j4
             x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
+            phi += (j1 + 2 * j2 + 2 * j3 + j4) / 6.
             steps += 1
         print "Q = ", Q
-        self.nodes = x
+        self.nodesX = x
+        self.nodesPhi = phi
         return steps * h
 
     def getLinkList(self):
@@ -318,7 +328,7 @@ class Configuration:
         delete_list = []
         Links = self.getLinkList()
         for l1, l2 in itertools.combinations(Links, 2):
-            if intersect(self.nodes[l1[0], 0], self.nodes[l1[1], 0], self.nodes[l2[0], 0], self.nodes[l2[1], 0]):
+            if intersect(self.nodesX[l1[0]], self.nodesX[l1[1]], self.nodesX[l2[0]], self.nodesX[l2[1]]):
                 Xs.append([l1, l2])
         while len(Xs) > 0:
             Xsflat = np.array(Xs).reshape(2 * len(Xs), 2)
@@ -349,9 +359,9 @@ class Configuration:
         if self.islink[n1, n2] is True:
             return -1, null
         for l in Links:
-            if intersect(self.nodes[n1, 0], self.nodes[n2, 0], self.nodes[l[0], 0], self.nodes[l[1], 0]):
+            if intersect(self.nodesX[n1], self.nodesX[n2], self.nodesX[l[0]], self.nodesX[l[1]]):
                 return -1, null  # false
-        e, d = getNormtoo(self.nodes[n1, 0] - self.nodes[n2, 0])
+        e, d = getNormtoo(self.nodesX[n1] - self.nodesX[n2])
         if d > self.d0max:
             return -1, null  # false
         return d, e  # true: d>0
@@ -413,7 +423,7 @@ class Configuration:
         return dt
 
     def makesnap(self, t):
-        self.nodesnap.append(self.nodes[:, 0, :].copy())
+        self.nodesnap.append(self.nodesX.copy())
         self.fnodesnap.append(self.Fnode.copy())
         linkList = self.getLinkList()
         self.linksnap.append(linkList)
