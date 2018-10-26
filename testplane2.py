@@ -21,21 +21,22 @@ def rand3d(L):
 
 def generate_initial_config(L=10, N=None):
     if N is None:
-        N = int(L ** 2)
-    c = Configuration(N)
+        # N = int(L ** 2)
+        N = 70
+    c = Configuration(N, dims=2)
 
     for ni in range(N):
         while True:
             R1 = generatePoint(L)
             OK = True
             for nj in range(ni):
-                d = np.linalg.norm(c.nodes[nj] - R1)
+                d = np.linalg.norm(c.nodesX[nj] - R1)
                 if d < d0min:
                     OK = False
                     break
             if OK:
                 break
-        c.nodes[ni] = R1
+        c.nodesX[ni] = R1
 
     return c
 
@@ -59,10 +60,10 @@ if __name__ == '__main__':
     chkx = True  # check if links overlap?
 
     config = generate_initial_config(Lmax)
-    config.updateDists(config.nodes[:, 0, :])
+    config.updateDists(config.nodesX)
 
-    for i, j in voronoi_neighbors.VoronoiNeighbors2(config.nodes[:, 0, :]):
-        if np.linalg.norm(config.nodes[i, 0] - config.nodes[j, 0]) <= d0max:
+    for i, j in voronoi_neighbors2.VoronoiNeighbors(config.nodesX, d0max=config.d0max, vodims=2):
+        if np.linalg.norm(config.nodesX[i] - config.nodesX[j]) <= d0max:
             config.addlink(i, j)
 
     # cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
