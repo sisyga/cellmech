@@ -2,6 +2,7 @@
 
 from cell2 import *
 import cProfile
+import matplotlib.pyplot as plt
 
 npr.seed(seed=0)
 
@@ -22,7 +23,7 @@ def rand3d(L):
 def generate_initial_config(L=10, N=None):
     if N is None:
         # N = int(L ** 2)
-        N = 70
+        N = 5
     c = Configuration(N, dims=2)
 
     for ni in range(N):
@@ -40,12 +41,42 @@ def generate_initial_config(L=10, N=None):
 
     return c
 
+def generate_default_initial(L=10, N=None):
+    if N is None:
+        N = 10
+    R = []
+    for ni in range(N):
+        while True:
+            R1 = generatePoint(L)
+            OK = True
+            for r in R:
+                d = np.linalg.norm(R1 - r)
+                if d < d0min:
+                    OK = False
+                    break
+            if OK:
+                break
+        R.append(R1)
+    R = np.array(R)
+    np.save("Rinit", R)
+
+    return R
+
+def generate_config_from_default(R):
+    N = len(R)
+    c = Configuration(N, dims=2)
+    for ni in range(N):
+        c.nodesX[ni] = R[ni]
+
+    return c
+
+
 
 if __name__ == '__main__':
 
     bend = 10.0
     twist = 1.0
-    Lmax = 10
+    Lmax = 3
     dt = 0.01
     nmax = 3000
     qmin = 0.001
@@ -59,7 +90,11 @@ if __name__ == '__main__':
     anis = 1.0  # anisotropy of building links (we don't need this so far)
     chkx = True  # check if links overlap?
 
-    config = generate_initial_config(Lmax)
+    # config = generate_initial_config(Lmax)
+
+    R = generate_default_initial(Lmax)
+    config = generate_config_from_default(R)
+
     config.updateDists(config.nodesX)
 
     for i, j in voronoi_neighbors2.VoronoiNeighbors(config.nodesX, d0max=config.d0max, vodims=2):
@@ -67,6 +102,9 @@ if __name__ == '__main__':
             config.addlink(i, j)
 
     # cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
-    configs, links, nodeforces, linkforces, ts = config.timeevo(2, record=True)
-    animateconfigs(configs, links, nodeforces, linkforces, ts)
-    mlab.show()
+    configs, links, nodeforces, linkforces, ts = config.timeevo(5, record=True)
+    # animateconfigs(configs, links, nodeforces, linkforces, ts)
+    # mlab.show()
+    Qtie = np.linspace(1, len(config.Qtrack), len(config.Qtrack))
+    plt.plot(Qtie, config.Qtrack)
+    plt.show()

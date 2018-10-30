@@ -27,8 +27,8 @@ def ccw(A, B, C):
 def getNormvec(v):
     # returns normalized v
     d = scipy.linalg.norm(v, axis=-1)
-    v_masked = ma.array(v) / ma.array(d[..., None])
-    v = np.array(v_masked.filled(0))
+    v_masked = ma.getdata(ma.array(v) / ma.array(d[..., None]))
+    v = ma.getdata(v_masked.filled(0))
 
     return v
 
@@ -37,7 +37,7 @@ def getNormtoo(v):
     # returns norm of v and normalized v
     d = scipy.linalg.norm(v, axis=-1)
     v_masked = ma.array(v) / ma.array(d[..., None])
-    v = np.array(v_masked.filled(0))
+    v = ma.getdata(v_masked.filled(0))
 
     return v, d
 
@@ -53,7 +53,7 @@ def getRotMatArray(Phis):
     Thetas = scipy.linalg.norm(Phis, axis=1)
     ThetaDiv = Thetas.copy()
     Axes_masked = ma.array(Phis) / ma.array(ThetaDiv[..., None])
-    Axes = np.array(Axes_masked.filled(0))
+    Axes = ma.getdata(Axes_masked.filled(0))
     a = np.cos(Thetas / 2)
     b, c, d = np.transpose(Axes) * np.sin(Thetas / 2)
     RotMat = np.array([[a * a + b * b - c * c - d * d, 2 * (b * c - a * d), 2 * (b * d + a * c)],
@@ -142,7 +142,6 @@ def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bg
             yield
 
 
-
 class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
                  p_del=0.2, chkx=True, anis=0.0, d0max=2., dims=3):
@@ -202,6 +201,8 @@ class Configuration:
         self.Mlink = np.zeros((self.N, self.N, 3))      # Torsion from link on node
         self.Flink = np.zeros((self.N, self.N, 3))      # Force from link on node
 
+        self.Qtrack = []
+
     def addlink(self, n1, n2, t1=None, t2=None, d0=None, k=None, bend=None, twist=None, n=None, norm1=None, norm2=None):
         ni = n1
         mi = n2
@@ -253,7 +254,7 @@ class Configuration:
         dX = X - X[:, None]
         self.d = scipy.linalg.norm(dX, axis=2)
         e_masked = ma.array(dX) / ma.array(self.d[..., None])
-        self.e = np.array(e_masked.filled(0))
+        self.e = ma.getdata(e_masked.filled(0))
 
     def compactStuffINeed(self):
         # get only those parts of the big arrays that are actually needed
@@ -315,7 +316,6 @@ class Configuration:
         self.updateLinkForces(Phi, t, norm, normT, bend, twist, k, d0, nodeinds)
         self.Fnode = np.sum(self.Flink, axis=1)
         self.Mnode = np.sum(self.Mlink, axis=1)
-
         return self.Fnode, self.Mnode
 
     def mechEquilibrium(self):
@@ -327,11 +327,11 @@ class Configuration:
         for i in range(self.nmax):
             k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
             Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) / self.N
+            self.Qtrack.append(Q)
             if Q < self.qmin:
                 print "broke"
                 break
             k1, j1 = h * k1, h * j1
-
             k2, j2 = self.getForces(x + k1 / 2, phi + j1 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
             k2, j2 = h * k2, h * j2
             k3, j3 = self.getForces(x + k2 / 2, phi + j2 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
@@ -341,6 +341,9 @@ class Configuration:
             x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
             phi += (j1 + 2 * j2 + 2 * j3 + j4) / 6.
             steps += 1
+            print self.Fnode
+            if steps == 10:
+                sys.exit()
         print "Q = ", Q
         self.nodesX = x
         self.nodesPhi = phi

@@ -63,6 +63,16 @@ def generate_initial_config(L=10, d2=True, N=None):
         return c
 
 
+def generate_config_from_default():
+    R = np.load("Rinit.npy")
+    N = len(R)
+    c = Configuration(N, d2=d2)
+    for R1 in R:
+        n = node(c, R1)
+        n.twist = twist
+        n.bend = bend
+    return c
+
 
 if __name__ == '__main__':
 
@@ -83,13 +93,18 @@ if __name__ == '__main__':
     chkx = True  # check if links overlap?
 
     N = int(L ** 2)  # 1 cell / unit area
-    c = generate_initial_config(L, N=N, d2=d2)
+    # c = generate_initial_config(L, N=N, d2=d2)
+    c = generate_config_from_default()
 
     for i, j in VoronoiNeighbors([n.getR() for n in c.nodes], d0max, is3D=c.is3d):
         if norm(c.x[c.nodes[i].r] - c.x[c.nodes[j].r], 'mag') <= d0max:
             c.nodes[i].addLinkTo(c.nodes[j])
 
     # cProfile.run('c.timeevo(2, record=True)', sort='cumtime')
-    configs, ts = c.timeevo(2, record=True)
-    animateconfigs(configs, ts=ts)
-    mlab.show()
+    configs, ts = c.timeevo(5, record=True)
+    # animateconfigs(configs, ts=ts)
+    # mlab.show()
+
+    Qtie = np.linspace(1, len(c.Qtrack), len(c.Qtrack))
+    plt.plot(Qtie, c.Qtrack)
+    plt.show()

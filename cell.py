@@ -118,6 +118,8 @@ class Configuration():
             self.N = 0
             self.x = None
 
+        self.Qtrack = []
+
     def updateLinkForces(self, l, x):
         l.e, l.d = norm(x[l.n2.r] - x[l.n1.r])  # actual link direction and length
         l.n = norm(l.norm1 + l.norm2, "vec")  # Eq. 7
@@ -158,6 +160,7 @@ class Configuration():
         for i in range(self.nmax):
             k1 = self.F(x)
             Q = np.dot(k1, k1) / len(self.nodes)
+            self.Qtrack.append(Q)
             # print i, Q, max([x[n.r][0] for n in self.nodes])
             if i % 100 == 0 and self.dumpdir is not None:
                 dumpData('s/%05d.pickle' % (self.dumpdir, i))
@@ -168,6 +171,10 @@ class Configuration():
             k3 = h * self.F(x + k2 / 2)
             k4 = h * self.F(x + k3)
             x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
+            for n in self.nodes:
+                print n.F
+            if i == 10:
+                sys.exit()
         self.x = x
         return (i + 1) * h
 
