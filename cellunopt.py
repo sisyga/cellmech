@@ -270,48 +270,6 @@ class Configuration:
                      inter2[..., None] * NormNow + \
                      (self.k * (self.d - self.d0))[..., None] * self.e   # Eqs. 13, 14, 15
 
-        def updateLinkForces2D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-            NodesPhi = PHI[Nodeinds[0]]
-            E = self.e[Nodeinds]
-            D = self.d[Nodeinds]
-            RotMat = getRotMatArray(NodesPhi)
-
-            NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)  # rotated version of norm to fit current setup
-            TNow = np.einsum("ijk, ik -> ij", RotMat, T)  # rotated version of t to fit current setup
-
-            Norm2Now = np.cross(NormNow, E)
-
-            self.Mlink[Nodeinds] = Bend[:, None] * np.cross(TNow, E)
-
-            M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
-
-            self.Flink[Nodeinds] = (np.einsum("ij, ij -> i", M[Nodeinds], Norm2Now) / D)[:, None] * NormNow - \
-                                   (np.einsum("ij, ij -> i", M[Nodeinds], NormNow) / D)[:, None] * Norm2Now + \
-                                   (K * (D - D0))[:, None] * E  # Eqs. 13, 14, 15
-
-        def updateLinkForces3D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-            NodesPhi = PHI[Nodeinds[0]]
-            NodesPhiT = PHI[Nodeinds[1]]
-            E = self.e[self.islink]
-            D = self.d[self.islink]
-            RotMat = getRotMatArray(NodesPhi)
-            RotMatT = getRotMatArray(NodesPhiT)
-
-            NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)  # rotated version of norm to fit current setup
-            NormTNow = np.einsum("ijk, ik -> ij", RotMatT, NormT)
-            TNow = np.einsum("ijk, ik -> ij", RotMat, T)  # rotated version of t to fit current setup
-
-            Norm2Now = np.cross(NormNow, E)
-
-            self.Mlink[self.islink] = Bend[:, None] * np.cross(TNow, E) + \
-                                      Twist[:, None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
-
-            M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
-
-            self.Flink[self.islink] = (np.einsum("ij, ij -> i", M[self.islink], Norm2Now) / D)[:, None] * NormNow - \
-                                      (np.einsum("ij, ij -> i", M[self.islink], NormNow) / D)[:, None] * Norm2Now + \
-                                      (K * (D - D0))[:, None] * E  # Eqs. 13, 14, 15
-
 
     def getForces(self, X, Phi):
         self.updateDists(X)
