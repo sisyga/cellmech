@@ -118,8 +118,6 @@ class Configuration():
             self.N = 0
             self.x = None
 
-        self.Qtrack = []
-
     def updateLinkForces(self, l, x):
         l.e, l.d = norm(x[l.n2.r] - x[l.n1.r])  # actual link direction and length
         l.n = norm(l.norm1 + l.norm2, "vec")  # Eq. 7
@@ -160,7 +158,6 @@ class Configuration():
         for i in range(self.nmax):
             k1 = self.F(x)
             Q = np.dot(k1, k1) / len(self.nodes)
-            self.Qtrack.append(Q)
             # print i, Q, max([x[n.r][0] for n in self.nodes])
             if i % 100 == 0 and self.dumpdir is not None:
                 dumpData('s/%05d.pickle' % (self.dumpdir, i))
@@ -171,10 +168,6 @@ class Configuration():
             k3 = h * self.F(x + k2 / 2)
             k4 = h * self.F(x + k3)
             x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
-            for n in self.nodes:
-                print n.F
-            if i == 10:
-                sys.exit()
         self.x = x
         return (i + 1) * h
 
@@ -347,7 +340,7 @@ def showconfig(config, figure=None, figureindex=0, bgcolor=(1, 1, 1), fgcolor=(0
     return cells, links
 
 
-@mlab.animate(delay=100)
+@mlab.animate(delay=500)
 def animateconfigs(configs, ts=None, figureindex=0, bgcolor=(1, 1, 1), fgcolor=(0, 0, 0), figsize=(1000, 1000),
                    cmap='viridis', cbar=False):
     fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
@@ -359,7 +352,7 @@ def animateconfigs(configs, ts=None, figureindex=0, bgcolor=(1, 1, 1), fgcolor=(
     if ts is None:
         ts = range(len(configs))
     while True:
-        for (c, t) in zip(configs[1:], ts[1:]):
+        for (c, t) in zip(configs, ts):
             x, y, z, phi1, phi2, phi3 = c.x.reshape(6, c.N, order='F')
             posl, rl, dl, fl, fc = [], [], [], [], []
             for l in c.links:
@@ -430,7 +423,7 @@ class node(object):
             l = link(self.config, self, n, t1, t2, d0, k)
             self.links.append(l)
             n.links.append(l)
-        return l
+            return l
 
     def rmLinkTo(self, n):
         l = self.findLinkTo(n)

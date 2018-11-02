@@ -100,11 +100,10 @@ if __name__ == '__main__':
         if norm(c.x[c.nodes[i].r] - c.x[c.nodes[j].r], 'mag') <= d0max:
             c.nodes[i].addLinkTo(c.nodes[j])
 
-    # cProfile.run('c.timeevo(2, record=True)', sort='cumtime')
-    configs, ts = c.timeevo(5, record=True)
+    np.random.seed(seed=0)
+
+    cProfile.run('c.timeevo(2, record=True)', sort='cumtime')
+    # configs, ts = c.timeevo(2., record=True)
     # animateconfigs(configs, ts=ts)
     # mlab.show()
 
-    Qtie = np.linspace(1, len(c.Qtrack), len(c.Qtrack))
-    plt.plot(Qtie, c.Qtrack)
-    plt.show()

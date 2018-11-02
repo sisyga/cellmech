@@ -51,8 +51,7 @@ def intersect(A, B, C, D):
 
 def getRotMatArray(Phis):
     Thetas = scipy.linalg.norm(Phis, axis=1)
-    ThetaDiv = Thetas.copy()
-    Axes_masked = ma.array(Phis) / ma.array(ThetaDiv[..., None])
+    Axes_masked = ma.array(Phis) / ma.array(Thetas[..., None])
     Axes = ma.getdata(Axes_masked.filled(0))
     a = np.cos(Thetas / 2)
     b, c, d = np.transpose(Axes) * np.sin(Thetas / 2)
@@ -138,24 +137,14 @@ def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bg
             cells.mlab_source.set(x=x, y=y, z=z, scalars=fc)
             links.mlab_source.reset(x=xl, y=yl, z=zl, u=rxl, v=ryl, w=rzl, scalars=fl)
             text.set(text='{}'.format(round(t, 2)))
-            print 'Updating... '
+            # print 'Updating... '
             yield
 
 class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
                  p_del=0.2, chkx=True, anis=0.0, d0max=2., dims=3):
-        if dims == 2:
-            self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
-                self.updateLinkForces2D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
-            self.dims = dims
-        elif dims == 3:
-            self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
-                self.updateLinkForces3D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
-            self.dims = dims
-        else:
-            print "Oops! Wrong number of dimensions here."
-            sys.exit()
 
+        self.dims = dims
         # parameters for mechanical equilibration
         self.dt = dt
         self.nmax = nmax
@@ -171,6 +160,10 @@ class Configuration:
         # variables to store cell number and cell positions and angles
         self.N = num
         self.ones = np.ones(self.N)
+        #functions for randoms in default_update_d0
+        self.lowers = np.tril_indices(self.N, -1)
+        self.randomsummand = np.zeros((self.N, self.N))
+        self.randomlength = self.N * (self.N - 1) / 2
 
         """stuff for documentation"""
         self.nodesnap = []
@@ -201,11 +194,9 @@ class Configuration:
         self.Flink = np.zeros((self.N, self.N, 3))      # Force from link on node
 
         self.Qtrack = []
+        self.Ferrtrack = []
 
-    def addlink(self, n1, n2, t1=None, t2=None, d0=None, k=None, bend=None, twist=None, n=None, norm1=None, norm2=None):
-        ni = n1
-        mi = n2
-
+    def addlink(self, ni, mi, t1=None, t2=None, d0=None, k=None, bend=None, twist=None, n=None, norm1=None, norm2=None):
         self.islink[ni, mi], self.islink[mi, ni] = True, True
 
         if k is None:
@@ -242,79 +233,91 @@ class Configuration:
             norm2 = np.dot(RotMat2, n)
         self.norm[mi, ni] = norm2
 
-    def removelink(self, n1, n2):
-        ni = n1
-        mi = n2
-
+    def removelink(self, ni, mi):
         self.islink[ni, mi], self.islink[mi, ni] = False, False
         self.Flink[ni, mi], self.Flink[mi, ni], self.Mlink[ni, mi], self.Mlink[mi, ni] = null, null, null, null
+        self.t[ni, mi], self.t[mi, ni], self.norm[ni, mi], self.norm[mi, ni] = null, null, null, null
+        self.k[ni, mi], self.k[mi, ni], self.d0[ni, mi], self.d0[mi, ni] = 0, 0, 0, 0
 
     def updateDists(self, X):
-        dX = X - X[:, None]
+        dX = X - X[:, None, :]
         self.d = scipy.linalg.norm(dX, axis=2)
         e_masked = ma.array(dX) / ma.array(self.d[..., None])
         self.e = ma.getdata(e_masked.filled(0))
 
-    def compactStuffINeed(self):
-        # get only those parts of the big arrays that are actually needed
-        nodeinds = np.where(self.islink == True)
-        t = self.norm[nodeinds]
-        norm = self.norm[nodeinds]
-        normT = np.transpose(self.norm, axes=(1, 0, 2))[nodeinds]
-        bend = self.bend[nodeinds]
-        twist = self.twist[nodeinds]
-        k = self.k[nodeinds]
-        d0 = self.d0[nodeinds]
+    def updateLinkForces2D(self, PHI):
+        RotMat = getRotMatArray(PHI)
 
-        return t, norm, normT, bend, twist, k, d0, nodeinds
+        NormNow = np.einsum("ijk, ilk -> ilj", RotMat, self.norm)      # rotated version of norm to fit current setup
+        TNow = np.einsum("ijk, ilk -> ilj", RotMat, self.t)            # rotated version of t to fit current setup
 
-    def updateLinkForces2D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-        NodesPhi = PHI[Nodeinds[0]]
-        E = self.e[Nodeinds]
-        D = self.d[Nodeinds]
-        RotMat = getRotMatArray(NodesPhi)
+        Norm2Now = np.cross(NormNow, self.e)
 
-        NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)      # rotated version of norm to fit current setup
-        TNow = np.einsum("ijk, ik -> ij", RotMat, T)            # rotated version of t to fit current setup
-
-        Norm2Now = np.cross(NormNow, E)
-
-        self.Mlink[Nodeinds] = Bend[:, None] * np.cross(TNow, E)
+        self.Mlink = -self.bend[..., None] * np.cross(TNow, self.e)
 
         M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
 
-        self.Flink[Nodeinds] = (np.einsum("ij, ij -> i", M[Nodeinds], Norm2Now) / D)[:, None] * NormNow - \
-                                  (np.einsum("ij, ij -> i", M[Nodeinds], NormNow) / D)[:, None] * Norm2Now + \
-                                  (K * (D - D0))[:, None] * E   # Eqs. 13, 14, 15
+        inter2 = ma.array(np.einsum("ijk, ijk -> ij", M, Norm2Now))
+        inter1 = ma.array(np.einsum("ijk, ijk -> ij", M, NormNow))
 
-    def updateLinkForces3D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-        NodesPhi = PHI[Nodeinds[0]]
-        NodesPhiT = PHI[Nodeinds[1]]
-        E = self.e[self.islink]
-        D = self.d[self.islink]
-        RotMat = getRotMatArray(NodesPhi)
-        RotMatT = getRotMatArray(NodesPhiT)
+        inter1 /= ma.array(self.d)
+        inter2 /= ma.array(self.d)
 
-        NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)      # rotated version of norm to fit current setup
-        NormTNow = np.einsum("ijk, ik -> ij", RotMatT, NormT)
-        TNow = np.einsum("ijk, ik -> ij", RotMat, T)            # rotated version of t to fit current setup
+        inter1 = ma.getdata(ma.filled(inter1, 0))
+        inter2 = ma.getdata(ma.filled(inter2, 0))
 
-        Norm2Now = np.cross(NormNow, E)
+        self.Flink = -inter1[..., None] * Norm2Now + \
+                     inter2[..., None] * NormNow + \
+                     (self.k * (self.d - self.d0))[..., None] * self.e   # Eqs. 13, 14, 15
 
-        self.Mlink[self.islink] = Bend[:, None] * np.cross(TNow, E) + \
-                                  Twist[:, None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
+        def updateLinkForces2D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+            NodesPhi = PHI[Nodeinds[0]]
+            E = self.e[Nodeinds]
+            D = self.d[Nodeinds]
+            RotMat = getRotMatArray(NodesPhi)
 
-        M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
+            NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)  # rotated version of norm to fit current setup
+            TNow = np.einsum("ijk, ik -> ij", RotMat, T)  # rotated version of t to fit current setup
 
-        self.Flink[self.islink] = (np.einsum("ij, ij -> i", M[self.islink], Norm2Now) / D)[:, None] * NormNow - \
-                                  (np.einsum("ij, ij -> i", M[self.islink], NormNow) / D)[:, None] * Norm2Now + \
-                                  (K * (D - D0))[:, None] * E   # Eqs. 13, 14, 15
+            Norm2Now = np.cross(NormNow, E)
 
-    def getForces(self, X, Phi, t, norm, normT, bend, twist, k, d0, nodeinds):
+            self.Mlink[Nodeinds] = Bend[:, None] * np.cross(TNow, E)
+
+            M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
+
+            self.Flink[Nodeinds] = (np.einsum("ij, ij -> i", M[Nodeinds], Norm2Now) / D)[:, None] * NormNow - \
+                                   (np.einsum("ij, ij -> i", M[Nodeinds], NormNow) / D)[:, None] * Norm2Now + \
+                                   (K * (D - D0))[:, None] * E  # Eqs. 13, 14, 15
+
+        def updateLinkForces3D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+            NodesPhi = PHI[Nodeinds[0]]
+            NodesPhiT = PHI[Nodeinds[1]]
+            E = self.e[self.islink]
+            D = self.d[self.islink]
+            RotMat = getRotMatArray(NodesPhi)
+            RotMatT = getRotMatArray(NodesPhiT)
+
+            NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)  # rotated version of norm to fit current setup
+            NormTNow = np.einsum("ijk, ik -> ij", RotMatT, NormT)
+            TNow = np.einsum("ijk, ik -> ij", RotMat, T)  # rotated version of t to fit current setup
+
+            Norm2Now = np.cross(NormNow, E)
+
+            self.Mlink[self.islink] = Bend[:, None] * np.cross(TNow, E) + \
+                                      Twist[:, None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
+
+            M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
+
+            self.Flink[self.islink] = (np.einsum("ij, ij -> i", M[self.islink], Norm2Now) / D)[:, None] * NormNow - \
+                                      (np.einsum("ij, ij -> i", M[self.islink], NormNow) / D)[:, None] * Norm2Now + \
+                                      (K * (D - D0))[:, None] * E  # Eqs. 13, 14, 15
+
+
+    def getForces(self, X, Phi):
         self.updateDists(X)
-        self.updateLinkForces(Phi, t, norm, normT, bend, twist, k, d0, nodeinds)
+        self.updateLinkForces2D(Phi)
         self.Fnode = np.sum(self.Flink, axis=1)
-        self.Mnode = np.sum(self.Mlink, axis=1)
+        self.Mnode = -np.sum(self.Mlink, axis=1)
         return self.Fnode, self.Mnode
 
     def mechEquilibrium(self):
@@ -322,31 +325,24 @@ class Configuration:
         phi = self.nodesPhi.copy()
         h = self.dt
         steps = 0
-        t, norm, normT, bend, twist, k, d0, nodeinds = self.compactStuffINeed()
         for i in range(self.nmax):
-            k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k1, j1 = self.getForces(x, phi)
             Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) / self.N
-            self.Qtrack.append(Q)
             if Q < self.qmin:
-                print "broke"
                 break
             k1, j1 = h * k1, h * j1
-            k2, j2 = self.getForces(x + k1 / 2, phi + j1 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k2, j2 = self.getForces(x + k1 / 2, phi + j1 / 2)
             k2, j2 = h * k2, h * j2
-            k3, j3 = self.getForces(x + k2 / 2, phi + j2 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k3, j3 = self.getForces(x + k2 / 2, phi + j2 / 2)
             k3, j3 = h * k3, h * j3
-            k4, j4 = self.getForces(x + k3, phi + j3, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k4, j4 = self.getForces(x + k3, phi + j3)
             k4, j4 = h * k4, h * j4
             x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
             phi += (j1 + 2 * j2 + 2 * j3 + j4) / 6.
             steps += 1
-            # print self.Fnode
-            # if steps == 10:
-            #     sys.exit()
-        print "Q = ", Q
         self.nodesX = x
         self.nodesPhi = phi
-        return steps * h
+        return (steps + 1) * h
 
     def getLinkList(self):
         allLinks0, allLinks1 = np.where(self.islink == True)
@@ -385,32 +381,22 @@ class Configuration:
         return to_del
 
     def tryLink(self, n1, n2, Links):
-        if self.islink[n1, n2] is True:
-            return -1, null
+        if self.islink[n1, n2] == True:
+            return -1
         for l in Links:
             if intersect(self.nodesX[n1], self.nodesX[n2], self.nodesX[l[0]], self.nodesX[l[1]]):
-                return -1, null  # false
-        e, d = getNormtoo(self.nodesX[n1] - self.nodesX[n2])
+                return -1  # false
+        d = scipy.linalg.norm(self.nodesX[n1] - self.nodesX[n2])
         if d > self.d0max:
-            return -1, null  # false
-        return d, e  # true: d>0
-
-    def addLinkList_novoronoi(self, Links):
-        to_add = []
-        linkcands = np.transpose(np.where(self.d < self.d0max))
-        for link in linkcands:
-            d, e = self.tryLink(link[0], link[1], Links)
-            if d > 1e-5:
-                p = (1 - (d / 2.0))
-                to_add.append(((link[0], link[1]), p))
-        return to_add
+            return -1  # false
+        return d  # true: d>0
 
     def addLinkList(self, Links):
         to_add = []
         for i, j in voronoi_neighbors2.VoronoiNeighbors(self.nodesX, self.d0max, vodims=self.dims):
-            d, e = self.tryLink(i, j, Links)
+            d = self.tryLink(i, j, Links)
             if d > 1e-5:
-                p = (1 - (d / 2.0))
+                p = (1 - (d / self.d0max))
                 to_add.append(((i, j), p))
         return to_add
 
@@ -447,8 +433,10 @@ class Configuration:
                     return dt
 
     def default_update_d0(self, dt):
+        myrandom = npr.random((self.randomlength, ))
+        self.randomsummand[self.lowers], self.randomsummand.T[self.lowers] = myrandom, myrandom
         self.d0 += 0.2 * (self.d0_0 - self.d0) * dt + 0.05 * (
-                   2 * sqrt(dt) * npr.random() - sqrt(dt))              # magic number 0.2 and 0.05??
+                   2 * sqrt(dt) * self.randomsummand - sqrt(dt))              # magic number 0.2 and 0.05??
 
     def modlink(self):
         if self.chkx:
@@ -474,19 +462,31 @@ class Configuration:
             self.makesnap(0)
         while t < tmax:
             dt = self.mechEquilibrium()
-            print "equil: dt = ", dt
             t += dt
-            print "t = ", t
             if record:
                 self.makesnap(t)
+            update_progress(t / tmax)
             dt = self.modlink()
-            # update_progress(t / tmax)
-            print "modify: dt = ", dt
             t += dt
-            print "t = ", t
             if record:
                 self.makesnap(t)
-            # update_progress(t / tmax)
+            update_progress(t / tmax)
+        if record:
+            self.nodesnap = np.array(self.nodesnap)
+            self.fnodesnap = np.array(self.fnodesnap)
+            return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
+
+    def minitimeevo(self, tmax, record=False):
+        t = 0.
+        if record:
+            self.makesnap(0)
+        while t < tmax:
+            dt = self.mechEquilibrium()
+            t += dt
+            if record:
+                self.makesnap(t)
+            update_progress(t / tmax)
+            self.default_update_d0(dt)
         if record:
             self.nodesnap = np.array(self.nodesnap)
             self.fnodesnap = np.array(self.fnodesnap)
