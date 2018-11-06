@@ -284,7 +284,7 @@ class Configuration():
         return dt
 
     def timeevo(self, tmax, record=False):
-        configs, ts = [copy.deepcopy(self)], [0.]
+        # configs, ts = [copy.deepcopy(self)], [0.]
         t = 0.
         while t < tmax:
             dt = self.mechEquilibrium()

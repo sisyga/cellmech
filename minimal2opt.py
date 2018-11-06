@@ -1,6 +1,6 @@
 #!/usr/bin/python  -u
 
-from cellunopt import *
+from cell2opt import *
 import cProfile
 import matplotlib.pyplot as plt
 
@@ -52,7 +52,7 @@ if __name__ == '__main__':
 
     config.addlink(0, 2)
 
-    configs, links, nodeforces, linkforces, ts = config.minitimeevo(4., record=True)
+    configs, links, nodeforces, linkforces, ts = config.minitimeevo(4., record=True, now=False)
     """
     t = 0.
     config.makesnap(0)

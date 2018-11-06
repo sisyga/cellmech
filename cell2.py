@@ -143,7 +143,7 @@ def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bg
 
 class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
-                 p_del=0.2, chkx=True, anis=0.0, d0max=2., dims=3):
+                 p_del=0.2, chkx=True, anis=0.0, d0max=2., dims=2):
         if dims == 2:
             self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
                 self.updateLinkForces2D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
@@ -199,8 +199,6 @@ class Configuration:
         self.norm = np.zeros((self.N, self.N, 3))       # normal vector of link at node
         self.Mlink = np.zeros((self.N, self.N, 3))      # Torsion from link on node
         self.Flink = np.zeros((self.N, self.N, 3))      # Force from link on node
-
-        self.Qtrack = []
 
     def addlink(self, n1, n2, t1=None, t2=None, d0=None, k=None, bend=None, twist=None, n=None, norm1=None, norm2=None):
         ni = n1
@@ -326,9 +324,7 @@ class Configuration:
         for i in range(self.nmax):
             k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
             Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) / self.N
-            self.Qtrack.append(Q)
             if Q < self.qmin:
-                print "broke"
                 break
             k1, j1 = h * k1, h * j1
             k2, j2 = self.getForces(x + k1 / 2, phi + j1 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
@@ -340,13 +336,9 @@ class Configuration:
             x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
             phi += (j1 + 2 * j2 + 2 * j3 + j4) / 6.
             steps += 1
-            # print self.Fnode
-            # if steps == 10:
-            #     sys.exit()
-        print "Q = ", Q
         self.nodesX = x
         self.nodesPhi = phi
-        return steps * h
+        return (steps + 1) * h
 
     def getLinkList(self):
         allLinks0, allLinks1 = np.where(self.islink == True)

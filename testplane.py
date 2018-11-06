@@ -100,9 +100,7 @@ if __name__ == '__main__':
         if norm(c.x[c.nodes[i].r] - c.x[c.nodes[j].r], 'mag') <= d0max:
             c.nodes[i].addLinkTo(c.nodes[j])
 
-    np.random.seed(seed=0)
-
-    cProfile.run('c.timeevo(2, record=True)', sort='cumtime')
+    cProfile.run('c.timeevo(2, record=False)', sort='cumtime')
     # configs, ts = c.timeevo(2., record=True)
     # animateconfigs(configs, ts=ts)
     # mlab.show()

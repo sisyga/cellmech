@@ -1,6 +1,6 @@
 #!/usr/bin/python  -u
 
-from cellunopt import *
+from cell2opt import *
 import cProfile
 import matplotlib.pyplot as plt
 npr.seed(seed=0)
@@ -40,6 +40,7 @@ def generate_initial_config(L=10, N=None):
 
     return c
 
+
 def generate_default_initial(L=10, N=None):
     if N is None:
         N = int(L ** 2)
@@ -75,7 +76,7 @@ if __name__ == '__main__':
 
     bend = 10.0
     twist = 1.0
-    Lmax = 10
+    Lmax = 20
     dt = 0.01
     nmax = 3000
     qmin = 0.001
@@ -91,7 +92,7 @@ if __name__ == '__main__':
 
     # config = generate_initial_config(Lmax)
 
-    R = generate_default_initial(Lmax, N=80)
+    R = generate_default_initial(Lmax)
     config = generate_config_from_default(R)
 
     config.updateDists(config.nodesX)
@@ -99,8 +100,6 @@ if __name__ == '__main__':
     for i, j in voronoi_neighbors2.VoronoiNeighbors(config.nodesX, d0max=config.d0max, vodims=2):
         if np.linalg.norm(config.nodesX[i] - config.nodesX[j]) <= d0max:
             config.addlink(i, j)
-
-    npr.seed(seed=0)
 
     cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
     # configs, links, nodeforces, linkforces, ts = config.timeevo(4., record=True)
