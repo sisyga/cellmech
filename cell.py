@@ -27,7 +27,7 @@ def ccw(A, B, C):
 def getNormvec(v):
     # returns normalized v
     d = scipy.linalg.norm(v, axis=-1)
-    v_masked = ma.getdata(ma.array(v) / ma.array(d[..., None]))
+    v_masked = ma.array(v) / ma.array(d[..., None])
     v = ma.getdata(v_masked.filled(0))
 
     return v
@@ -142,7 +142,7 @@ def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bg
 
 class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
-                 p_del=0.2, chkx=False, anis=0.0, d0max=2., dims=3):
+                 p_del=0.2, chkx=False, d0max=2., dims=3):
         if dims == 2:
             self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
                 self.updateLinkForces2D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
@@ -166,7 +166,6 @@ class Configuration:
         self.p_add = p_add
         self.p_del = p_del
         self.chkx = chkx
-        self.anis = anis
         self.d0max = d0max
         # variables to store cell number and cell positions and angles
         self.N = num
@@ -270,9 +269,6 @@ class Configuration:
         return t, norm, normT, bend, twist, k, d0, nodeinds
 
     def updateLinkForces2D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-        self.Mlink.fill(0)
-        self.Flink.fill(0)
-
         NodesPhi = PHI[Nodeinds[0]]
         E = self.e[Nodeinds]
         D = self.d[Nodeinds]
@@ -316,12 +312,13 @@ class Configuration:
         Norm2Now = np.cross(NormNow, E)
 
         self.Mlink[self.islink] = -Bend[..., None] * np.cross(TNow, E) + \
-                                  Twist[:, None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
+                                  -Twist[:, None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
 
         M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
+        M = M[Nodeinds]
 
-        inter2 = ma.array(np.einsum("ij, ij -> i", M[Nodeinds], Norm2Now))
-        inter1 = ma.array(np.einsum("ij, ij -> i", M[Nodeinds], NormNow))
+        inter2 = ma.array(np.einsum("ij, ij -> i", M, Norm2Now))
+        inter1 = ma.array(np.einsum("ij, ij -> i", M, NormNow))
 
         inter1 /= ma.array(D)
         inter2 /= ma.array(D)
@@ -376,7 +373,6 @@ class Configuration:
         for l1, l2 in itertools.combinations(Links, 2):
             if intersect(self.nodesX[l1[0]], self.nodesX[l1[1]], self.nodesX[l2[0]], self.nodesX[l2[1]]):
                 Xs.append([l1, l2])
-        print "checked for crossing, found", len(Xs)
         while len(Xs) > 0:
             Xsflat = np.array(Xs).reshape(2 * len(Xs), 2)
             # u: unique elements in Xsflat (a.k.a. links), count: number of occurences in Xsflat
@@ -407,7 +403,6 @@ class Configuration:
             return -1
         for l in Links:
             if intersect(self.nodesX[n1], self.nodesX[n2], self.nodesX[l[0]], self.nodesX[l[1]]):
-                print "tried link, found crossing"
                 return -1  # false
         d = scipy.linalg.norm(self.nodesX[n1] - self.nodesX[n2])
         if d > self.d0max:
@@ -494,6 +489,21 @@ class Configuration:
             if record:
                 self.makesnap(t)
             update_progress(t / tmax)
+        if record:
+            self.nodesnap = np.array(self.nodesnap)
+            self.fnodesnap = np.array(self.fnodesnap)
+            return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
+
+    def minitimeevo(self, tmax, record=False, now=False):
+        t = 0.
+        if record:
+            self.makesnap(0)
+        while t < tmax:
+            dt = self.mechEquilibrium()
+            t += dt
+            if record and not now:
+                self.makesnap(t)
+            self.default_update_d0(dt)
         if record:
             self.nodesnap = np.array(self.nodesnap)
             self.fnodesnap = np.array(self.fnodesnap)
