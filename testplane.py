@@ -1,76 +1,73 @@
 #!/usr/bin/python  -u
 
-import cProfile
-
 from cell import *
-from voronoi_neighbors import *
-
-np.random.seed(seed=0)
+import cProfile
+import matplotlib.pyplot as plt
+npr.seed(seed=0)
 
 #######################################################
 
 
 def generatePoint(L):
-    X0 = (np.random.rand() - .5) * L
-    Y0 = (np.random.rand() - .5) * L
+    X0 = (npr.rand() - .5) * L
+    Y0 = (npr.rand() - .5) * L
     Z0 = 0.
     return np.array([X0, Y0, Z0])
+
 
 def rand3d(L):
     return (np.random.random(3) - 0.5) * L
 
-def generate_initial_config(L=10, d2=True, N=None):
-    if d2:
-        if N is None:
-            N = int(L**2)
-        c = Configuration(N, d2=d2)
 
-        for i in range(N):
-            while True:
-                R1 = generatePoint(L)
-                OK = True
-                for n in c.nodes:
-                    d = norm(n.getR() - R1, "len")
-                    if d < d0min:
-                        OK = False
-                        break
-                if OK: break
-            n = node(c, R1)
-            n.twist = twist
-            n.bend = bend
+def generate_initial_config(L=10, N=None):
+    if N is None:
+        N = int(L ** 2)
+    c = Configuration(N, dims=2)
 
-        return c
+    for ni in range(N):
+        while True:
+            R1 = generatePoint(L)
+            OK = True
+            for nj in range(ni):
+                d = np.linalg.norm(c.nodesX[nj] - R1)
+                if d < d0min:
+                    OK = False
+                    break
+            if OK:
+                break
+        c.nodesX[ni] = R1
 
-    else:
-        if N is None:
-            N = int(L ** 2)
-        c = Configuration(N, d2=d2)
-
-        for i in range(N):
-            while True:
-                R1 = rand3d(L)
-                OK = True
-                for n in c.nodes:
-                    d = norm(n.getR() - R1, "len")
-                    if d < d0min:
-                        OK = False
-                        break
-                if OK: break
-            n = node(c, R1)
-            n.twist = twist
-            n.bend = bend
-
-        return c
+    return c
 
 
-def generate_config_from_default():
-    R = np.load("Rinit.npy")
+def generate_default_initial(L=10, N=None, stretch=1.):
+    if N is None:
+        N = int(L ** 2)
+    R = []
+    for ni in range(N):
+        while True:
+            R1 = generatePoint(stretch * L)
+            OK = True
+            for r in R:
+                d = np.linalg.norm(R1 - r)
+                if d < d0min:
+                    OK = False
+                    break
+            if OK:
+                break
+        R.append(R1)
+    R = np.array(R)
+    np.save("Rinit", R)
+
+    return R
+
+
+def generate_config_from_default(R):
     N = len(R)
-    c = Configuration(N, d2=d2)
-    for R1 in R:
-        n = node(c, R1)
-        n.twist = twist
-        n.bend = bend
+    c = Configuration(N, dims=2)
+    for ni in range(N):
+        c.nodesX[ni] = R[ni]
+
     return c
 
 
@@ -78,7 +75,7 @@ if __name__ == '__main__':
 
     bend = 10.0
     twist = 1.0
-    L = 10.
+    Lmax = 20
     dt = 0.01
     nmax = 3000
     qmin = 0.001
@@ -92,16 +89,16 @@ if __name__ == '__main__':
     anis = 1.0  # anisotropy of building links (we don't need this so far)
     chkx = True  # check if links overlap?
 
-    N = int(L ** 2)  # 1 cell / unit area
-    # c = generate_initial_config(L, N=N, d2=d2)
-    c = generate_config_from_default()
+    config = generate_initial_config(Lmax)
 
-    for i, j in VoronoiNeighbors([n.getR() for n in c.nodes], d0max, is3D=c.is3d):
-        if norm(c.x[c.nodes[i].r] - c.x[c.nodes[j].r], 'mag') <= d0max:
-            c.nodes[i].addLinkTo(c.nodes[j])
+    config.updateDists(config.nodesX)
 
-    cProfile.run('c.timeevo(2, record=False)', sort='cumtime')
-    # configs, ts = c.timeevo(2., record=True)
-    # animateconfigs(configs, ts=ts)
+    for i, j in voronoi_neighbors.VoronoiNeighbors(config.nodesX, d0max=config.d0max, vodims=2):
+        if np.linalg.norm(config.nodesX[i] - config.nodesX[j]) <= d0max:
+            config.addlink(i, j)
+
+    cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
+    # configs, links, nodeforces, linkforces, ts = config.timeevo(4., record=True)
+    # animateconfigs(configs, links, nodeforces, linkforces, ts)
     # mlab.show()
 

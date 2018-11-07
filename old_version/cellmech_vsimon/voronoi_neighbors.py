@@ -54,8 +54,8 @@ def addGhosts(positions, d0max):
 #  !!!! d0max is ignored in 2D...
 #  positions: list of 2-tuples: ((x,y,z),flag)
 #  boolean is3D
-def VoronoiNeighbors(positions, d0max, vodims=2):
-    if vodims == 3:
+def VoronoiNeighbors(positions, d0max, is3D=False):
+    if is3D:
         # p = [n for (n, f) in positions]  # component [0] is a 3d vector
         # p += addGhosts(positions, d0max) # I don't understand ghost particles, for now, neglect them
         p = positions
@@ -83,7 +83,6 @@ def VoronoiNeighbors(positions, d0max, vodims=2):
     #    return [(i, j) for (i, j) in neighbors if i < len(positions) and j < len(positions)]
     # else:
     #    return neighbors
-
 
 # http://stackoverflow.com/questions/419163/what-does-if-name-main-do
 
