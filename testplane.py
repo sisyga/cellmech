@@ -2,6 +2,7 @@
 
 from cell import *
 import cProfile
+import animate
 import matplotlib.pyplot as plt
 npr.seed(seed=0)
 
@@ -90,7 +91,7 @@ def generate_cube(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims, s
 
 if __name__ == '__main__':
 
-    Lmax = 4
+    Lmax = 20
     N = None
 
     bend = 10.0
@@ -98,17 +99,17 @@ if __name__ == '__main__':
     dt = 0.01
     nmax = 3000
     qmin = 0.001
-    dims = 3
+    dims = 2
 
     d0min = 0.8  # min distance between cells
     d0max = 2.  # max distance connected by links
     d0_0 = 1.  # equilibrium distance of links
     p_add = 1.0  # rate to add links
     p_del = 0.1  # base rate to delete links
-    chkx = False  # check if links overlap?
+    chkx = True  # check if links overlap?
 
-    config = generate_cube(L=Lmax, N=N, dt=dt, nmax=nmax, qmin=qmin, d0_0=d0_0, p_add=p_add, p_del=p_del,
-                                     chkx=chkx, d0max=d0max, dims=dims, stretch = 1.2)
+    config = generate_initial_config(L=Lmax, N=N, dt=dt, nmax=nmax, qmin=qmin, d0_0=d0_0, p_add=p_add, p_del=p_del,
+                                     chkx=chkx, d0max=d0max, dims=dims)
 
     config.updateDists(config.nodesX)
 
@@ -116,8 +117,8 @@ if __name__ == '__main__':
         if np.linalg.norm(config.nodesX[i] - config.nodesX[j]) <= d0max:
             config.addlink(i, j)
 
-    # cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
-    configs, links, nodeforces, linkforces, ts = config.timeevo(5., record=True)
-    animateconfigs(configs, links, nodeforces, linkforces, ts)
-    mlab.show()
+    cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
+    # configs, links, nodeforces, linkforces, ts = config.timeevo(5., record=True)
+    # animateconfigs(configs, links, nodeforces, linkforces, ts)
+    # mlab.show()
 

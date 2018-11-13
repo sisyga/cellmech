@@ -1,9 +1,6 @@
 import numpy as np
 import itertools
-# from pyhull.delaunay import DelaunayTri
 from scipy.spatial import Delaunay, delaunay_plot_2d
-from matplotlib import pyplot as plt
-import sys
 
 # describing a plane through point P with normal vector n
 # P = (px, py, pz)

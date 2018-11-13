@@ -1,6 +1,5 @@
 #!/usr/bin/python  -u
 
-import itertools
 import sys
 import warnings
 from math import exp, log, sqrt
@@ -10,7 +9,6 @@ import numpy.random as npr
 import numpy.ma as ma
 import scipy.linalg
 import voronoi_neighbors
-from mayavi import mlab
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -20,8 +18,35 @@ ey = np.array([0.0, 1.0, 0.0])
 ez = np.array([0.0, 0.0, 1.0])
 
 
+def update_progress(progress):
+    """
+    Simple progress bar update.
+    :param progress: float. Fraction of the work done, to update bar.
+    :return:
+    """
+    barLength = 20  # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "Done...\r\n"
+    block = int(round(barLength * progress))
+    text = "\rProgress: [{0}] {1} % {2}".format("#" * block + "-" * (barLength - block), round(progress * 100, 1),
+                                                status)
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
 def ccw(A, B, C):
-    return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+    return np.greater((C[..., 1] - A[..., 1]) * (B[..., 0] - A[..., 0]),
+                      (B[..., 1] - A[..., 1]) * (C[..., 0] - A[..., 0]))
 
 
 def getNormvec(v):
@@ -70,76 +95,6 @@ def getRotMat(Phis):
                     [2 * (b * d - a * c), 2 * (c * d + a * b), a * a + d * d - b * b - c * c]])
 
 
-def update_progress(progress):
-    """
-    Simple progress bar update.
-    :param progress: float. Fraction of the work done, to update bar.
-    :return:
-    """
-    barLength = 20  # Modify this to change the length of the progress bar
-    status = ""
-    if isinstance(progress, int):
-        progress = float(progress)
-    if not isinstance(progress, float):
-        progress = 0
-        status = "error: progress var must be float\r\n"
-    if progress < 0:
-        progress = 0
-        status = "Halt...\r\n"
-    if progress >= 1:
-        progress = 1
-        status = "Done...\r\n"
-    block = int(round(barLength * progress))
-    text = "\rProgress: [{0}] {1} % {2}".format("#" * block + "-" * (barLength - block), round(progress * 100, 1),
-                                                status)
-    sys.stdout.write(text)
-    sys.stdout.flush()
-
-
-def showconfig(configs, links, nodeforces, fl, figure=None, figureindex = 0, bgcolor=(1, 1, 1), fgcolor=(0, 0, 0),
-               figsize=(1000, 1000), cmap='viridis', vmaxlinks=5, vmaxcells=5, cbar=False):
-    if figure is None:
-         fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
-    else:
-         fig = figure
-    x, y, z = configs.T
-    xl, yl, zl = configs[links[..., 0]].T
-    rxl, ryl, rzl = (configs[links[..., 1]] - configs[links[..., 0]]).T
-    fc = scipy.linalg.norm(nodeforces, axis=1)
-
-    cells = mlab.points3d(x, y, z, fc, scale_factor=1, opacity=0.5, resolution=16, scale_mode='none', vmin=0.,
-                          colormap=cmap, vmax=vmaxcells)
-    links = mlab.quiver3d(xl, yl, zl, rxl, ryl, rzl, scalars=fl, mode='2ddash', line_width=4., scale_mode='vector',
-                          scale_factor=1, colormap=cmap, vmin=0., vmax=vmaxlinks)
-    links.glyph.color_mode = "color_by_scalar"
-    if cbar:
-        mlab.scalarbar(links, nb_labels=2, title='Force on link')
-    return cells, links
-
-
-@mlab.animate(delay=500)
-def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bgcolor=(1, 1, 1),
-                   fgcolor=(0, 0, 0), figsize=(1000, 1000), cmap='viridis', cbar=False):
-    fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
-    vmaxcells = np.max(scipy.linalg.norm(nodeForces, axis=2))
-    vmaxlinks = max([np.max(timestep) for timestep in linkForces])
-    cells, links = showconfig(Configs[0], Links[0], nodeForces[0], linkForces[0], fig,
-                              vmaxcells=vmaxcells, vmaxlinks=vmaxlinks)
-    text = mlab.title('0.0', height=.9)
-
-    while True:
-        for (c, l, nF, fl, t) in zip(Configs, Links, nodeForces, linkForces, ts):
-            x, y, z = c.T
-            xl, yl, zl = c[l[..., 0]].T
-            rxl, ryl, rzl = (c[l[..., 1]] - c[l[..., 0]]).T
-            fc = scipy.linalg.norm(nF, axis=1)
-
-            cells.mlab_source.set(x=x, y=y, z=z, scalars=fc)
-            links.mlab_source.reset(x=xl, y=yl, z=zl, u=rxl, v=ryl, w=rzl, scalars=fl)
-            text.set(text='{}'.format(round(t, 2)))
-            # print 'Updating... '
-            yield
-
 class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
                  p_del=0.2, chkx=False, d0max=2., dims=3):
@@ -170,7 +125,7 @@ class Configuration:
         # variables to store cell number and cell positions and angles
         self.N = num
         self.ones = np.ones(self.N)
-        #functions for randoms in default_update_d0
+        # functions for randoms in default_update_d0
         self.lowers = np.tril_indices(self.N, -1)
         self.randomsummand = np.zeros((self.N, self.N))
         self.randomlength = self.N * (self.N - 1) / 2
@@ -294,8 +249,8 @@ class Configuration:
         inter2 = ma.getdata(ma.filled(inter2, 0))
 
         self.Flink[Nodeinds] = -inter1[..., None] * Norm2Now + \
-                     inter2[..., None] * NormNow + \
-                     (K * (D - D0))[..., None] * E   # Eqs. 13, 14, 15
+                               inter2[..., None] * NormNow + \
+                               (K * (D - D0))[..., None] * E   # Eqs. 13, 14, 15
 
     def updateLinkForces3D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
         NodesPhi = PHI[Nodeinds[0]]
@@ -327,8 +282,8 @@ class Configuration:
         inter2 = ma.getdata(ma.filled(inter2, 0))
 
         self.Flink[self.islink] = -inter1[..., None] * Norm2Now + \
-                     inter2[..., None] * NormNow + \
-                     (K * (D - D0))[..., None] * E   # Eqs. 13, 14, 15
+                                  inter2[..., None] * NormNow + \
+                                  (K * (D - D0))[..., None] * E   # Eqs. 13, 14, 15
 
     def getForces(self, X, Phi, t, norm, normT, bend, twist, k, d0, nodeinds):
         self.updateDists(X)
@@ -366,13 +321,85 @@ class Configuration:
         allLinks0, allLinks1 = np.where(self.islink == True)
         return np.array([[allLinks0[i], allLinks1[i]] for i in range(len(allLinks0)) if allLinks0[i] > allLinks1[i]])
 
+    def getLinkTuple(self):
+        allLinks0, allLinks1 = np.where(self.islink == True)
+        inds = np.where(allLinks0 > allLinks1)
+        return allLinks0[inds], allLinks1[inds]
+
+    def intersect_all(self):
+        allLinks0, allLinks1 = self.getLinkTuple()
+
+        A = self.nodesX[allLinks0][:, None, :]
+        B = self.nodesX[allLinks1][:, None, :]
+        C = self.nodesX[allLinks0][None, ...]
+        D = self.nodesX[allLinks1][None, ...]
+
+        mynrm1 = scipy.linalg.norm(A - C, axis=2)
+        mynrm2 = scipy.linalg.norm(A - D, axis=2)
+        mynrm3 = scipy.linalg.norm(B - C, axis=2)
+
+        distbool1, distbool2, distbool3 = np.greater(mynrm1, 0.01), np.greater(mynrm2, 0.01), np.greater(mynrm3, 0.01)
+
+        distbool = np.logical_and(distbool1, distbool2)
+        distbool = np.logical_and(distbool, distbool3)
+
+        ccw1 = ccw(A, C, D)
+        ccw2 = ccw(B, C, D)
+        ccw3 = ccw(A, B, C)
+        ccw4 = ccw(A, B, D)
+
+        ccwa = np.not_equal(ccw1, ccw2)
+        ccwb = np.not_equal(ccw3, ccw4)
+
+        ccwf = np.logical_and(ccwa, ccwb)
+
+        finalbool = np.triu(ccwf)
+        finalbool[np.where(distbool == False)] = False
+
+        clashinds0, clashinds1 = np.where(finalbool == True)
+        clashlinks = np.array([[[allLinks0[clashinds0[i]], allLinks1[clashinds0[i]]],
+                                [allLinks0[clashinds1[i]], allLinks1[clashinds1[i]]]] for i in range(len(clashinds0))])
+
+        return clashlinks
+
+    def intersect_withone(self, n1, n2):
+        allLinks0, allLinks1 = self.getLinkTuple()
+
+        A = self.nodesX[n1][None, :]
+        B = self.nodesX[n2][None, :]
+        C = self.nodesX[allLinks0]
+        D = self.nodesX[allLinks1]
+
+        mynrm1 = scipy.linalg.norm(A - C, axis=1)
+        mynrm2 = scipy.linalg.norm(A - D, axis=1)
+        mynrm3 = scipy.linalg.norm(B - C, axis=1)
+
+        distbool1, distbool2, distbool3 = np.greater(mynrm1, 0.01), np.greater(mynrm2, 0.01), np.greater(mynrm3,
+                                                                                                         0.01)
+
+        distbool = np.logical_and(distbool1, distbool2)
+        distbool = np.logical_and(distbool, distbool3)
+
+        ccw1 = ccw(A, C, D)
+        ccw2 = ccw(B, C, D)
+        ccw3 = ccw(A, B, C)
+        ccw4 = ccw(A, B, D)
+
+        ccwa = np.not_equal(ccw1, ccw2)
+        ccwb = np.not_equal(ccw3, ccw4)
+
+        finalbool = np.logical_and(ccwa, ccwb)
+
+        finalbool[np.where(distbool == False)] = False
+
+        if True in finalbool:
+            return True
+        else:
+            return False
+
     def checkLinkX(self):
-        Xs = []
         delete_list = []
-        Links = self.getLinkList()
-        for l1, l2 in itertools.combinations(Links, 2):
-            if intersect(self.nodesX[l1[0]], self.nodesX[l1[1]], self.nodesX[l2[0]], self.nodesX[l2[1]]):
-                Xs.append([l1, l2])
+        Xs = self.intersect_all()
         while len(Xs) > 0:
             Xsflat = np.array(Xs).reshape(2 * len(Xs), 2)
             # u: unique elements in Xsflat (a.k.a. links), count: number of occurences in Xsflat
@@ -388,7 +415,8 @@ class Configuration:
         for badlink in delete_list:
             self.removelink(badlink[0], badlink[1])
 
-    def delLinkList(self, linklist):
+    def delLinkList(self):
+        linklist = self.getLinkList()
         to_del = []
         for link in linklist:
             if self.d[link[0], link[1]] < self.d0[link[0], link[1]]:
@@ -398,21 +426,20 @@ class Configuration:
             to_del.append((link, p))
         return to_del
 
-    def tryLink(self, n1, n2, Links):
-        if self.islink[n1, n2] == True:
+    def tryLink(self, n1, n2):
+        if self.islink[n1, n2]:
             return -1
-        for l in Links:
-            if intersect(self.nodesX[n1], self.nodesX[n2], self.nodesX[l[0]], self.nodesX[l[1]]):
-                return -1  # false
+        if self.intersect_withone(n1, n2):
+            return -1  # false
         d = scipy.linalg.norm(self.nodesX[n1] - self.nodesX[n2])
         if d > self.d0max:
             return -1  # false
         return d  # true: d>0
 
-    def addLinkList(self, Links):
+    def addLinkList(self):
         to_add = []
         for i, j in voronoi_neighbors.VoronoiNeighbors(self.nodesX, self.d0max, vodims=self.dims):
-            d = self.tryLink(i, j, Links)
+            d = self.tryLink(i, j)
             if d > 1e-5:
                 p = (1 - (d / self.d0max))
                 to_add.append(((i, j), p))
@@ -459,9 +486,8 @@ class Configuration:
     def modlink(self):
         if self.chkx:
             self.checkLinkX()
-        Links = self.getLinkList()
-        to_del = self.delLinkList(Links)
-        to_add = self.addLinkList(Links)
+        to_del = self.delLinkList()
+        to_add = self.addLinkList()
         dt = self.pickEvent(to_del, to_add)
         self.default_update_d0(dt)
         return dt
@@ -471,7 +497,7 @@ class Configuration:
         self.fnodesnap.append(self.Fnode.copy())
         linkList = self.getLinkList()
         self.linksnap.append(linkList)
-        self.flinksnap.append(scipy.linalg.norm(self.Flink[linkList[..., 0], linkList[..., 1]], axis = 1))
+        self.flinksnap.append(scipy.linalg.norm(self.Flink[linkList[..., 0], linkList[..., 1]], axis=1))
         self.snaptimes.append(t)
 
     def timeevo(self, tmax, record=False):
