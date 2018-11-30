@@ -1,8 +1,8 @@
 #!/usr/bin/python  -u
 
 from cell import *
+from animate import *
 import cProfile
-import animate
 import matplotlib.pyplot as plt
 npr.seed(seed=0)
 
@@ -41,6 +41,29 @@ def generate_initial_config(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0ma
         c.nodesX[ni] = R1
     return c
 
+def generate_initial_bilayer(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims):
+    if N is None:
+        N = int(2 * (L ** 2))
+
+    c = Configuration(N, dt=dt, nmax=nmax, qmin=qmin, d0_0=d0_0, p_add=p_add, p_del=p_del, chkx=chkx, d0max=d0max,
+                      dims=dims)
+
+    for ni in range(N):
+        while True:
+            R1 = generatePoint(L)
+            if ni >= N / 2:
+                R1[2] = d0_0
+            OK = True
+            for nj in range(ni):
+                d = np.linalg.norm(c.nodesX[nj] - R1)
+                if d < d0min:
+                    OK = False
+                    break
+            if OK:
+                break
+        c.nodesX[ni] = R1
+    return c
+
 
 def generate_default_initial(L=10, N=None):
     if N is None:
@@ -64,14 +87,14 @@ def generate_default_initial(L=10, N=None):
     return R
 
 
-def generate_config_from_default(R):
+def generate_config_from_default(R, L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims):
     N = len(R)
-    c = Configuration(N, dims=2)
+    c = Configuration(N, dt=dt, nmax=nmax, qmin=qmin, d0_0=d0_0, p_add=p_add, p_del=p_del, chkx=chkx, d0max=d0max,
+                      dims=dims)
     for ni in range(N):
         c.nodesX[ni] = R[ni]
 
     return c
-
 
 def generate_cube(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims, stretch=1.):
     if N is not None:
@@ -91,7 +114,7 @@ def generate_cube(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims, s
 
 if __name__ == '__main__':
 
-    Lmax = 20
+    Lmax = 5
     N = None
 
     bend = 10.0
@@ -99,17 +122,29 @@ if __name__ == '__main__':
     dt = 0.01
     nmax = 3000
     qmin = 0.001
-    dims = 2
-
+    dims = 3
+#
     d0min = 0.8  # min distance between cells
     d0max = 2.  # max distance connected by links
     d0_0 = 1.  # equilibrium distance of links
     p_add = 1.0  # rate to add links
     p_del = 0.1  # base rate to delete links
-    chkx = True  # check if links overlap?
+    chkx = False  # check if links overlap?
 
-    config = generate_initial_config(L=Lmax, N=N, dt=dt, nmax=nmax, qmin=qmin, d0_0=d0_0, p_add=p_add, p_del=p_del,
+
+    config = generate_initial_bilayer(L=Lmax, N=N, dt=dt, nmax=nmax, qmin=qmin, d0_0=d0_0, p_add=p_add, p_del=p_del,
                                      chkx=chkx, d0max=d0max, dims=dims)
+
+
+    """
+    R = [[i, 0, 0] for i in range(13)]
+    for i in range(12):
+        R.append([i + 0.5, 0.5, 0])
+    R = np.array(R)
+
+    config = generate_config_from_default(R, L=Lmax, N=N, dt=dt, nmax=nmax, qmin=qmin,
+                                          d0_0=d0_0, p_add=p_add, p_del=p_del, chkx=chkx, d0max=d0max, dims=dims)
+    """
 
     config.updateDists(config.nodesX)
 
@@ -117,8 +152,11 @@ if __name__ == '__main__':
         if np.linalg.norm(config.nodesX[i] - config.nodesX[j]) <= d0max:
             config.addlink(i, j)
 
-    cProfile.run('config.timeevo(2, record=True)', sort='cumtime')
-    # configs, links, nodeforces, linkforces, ts = config.timeevo(5., record=True)
-    # animateconfigs(configs, links, nodeforces, linkforces, ts)
-    # mlab.show()
+
+    # cProfile.run('config.timeevo(20, record=True)', sort='cumtime')
+
+    configs, links, nodeforces, linkforces, ts = config.timeevo(200., record=True)
+    config.savedata()
+    animateconfigs(configs, links, nodeforces, linkforces, ts)
+    mlab.show()
 

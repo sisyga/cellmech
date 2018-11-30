@@ -4,16 +4,17 @@ from mayavi import mlab
 import scipy.linalg
 import numpy as np
 
-def showconfig(configs, links, nodeforces, fl, figure=None, figureindex = 0, bgcolor=(1, 1, 1), fgcolor=(0, 0, 0),
+
+def showconfig(c, l, nF, fl, figure=None, figureindex=0, bgcolor=(1, 1, 1), fgcolor=(0, 0, 0),
                figsize=(1000, 1000), cmap='viridis', vmaxlinks=5, vmaxcells=5, cbar=False):
     if figure is None:
          fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
     else:
          fig = figure
-    x, y, z = configs.T
-    xl, yl, zl = configs[links[..., 0]].T
-    rxl, ryl, rzl = (configs[links[..., 1]] - configs[links[..., 0]]).T
-    fc = scipy.linalg.norm(nodeforces, axis=1)
+    x, y, z = c.T
+    xl, yl, zl = c[l[..., 0]].T
+    rxl, ryl, rzl = (c[l[..., 1]] - c[l[..., 0]]).T
+    fc = scipy.linalg.norm(nF, axis=1)
 
     cells = mlab.points3d(x, y, z, fc, scale_factor=1, opacity=0.5, resolution=16, scale_mode='none', vmin=0.,
                           colormap=cmap, vmax=vmaxcells)
@@ -25,7 +26,7 @@ def showconfig(configs, links, nodeforces, fl, figure=None, figureindex = 0, bgc
     return cells, links
 
 
-@mlab.animate(delay=500)
+@mlab.animate(delay=30)
 def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bgcolor=(1, 1, 1),
                    fgcolor=(0, 0, 0), figsize=(1000, 1000), cmap='viridis', cbar=False):
     fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)
@@ -45,7 +46,6 @@ def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bg
             cells.mlab_source.set(x=x, y=y, z=z, scalars=fc)
             links.mlab_source.reset(x=xl, y=yl, z=zl, u=rxl, v=ryl, w=rzl, scalars=fl)
             text.set(text='{}'.format(round(t, 2)))
-            # print 'Updating... '
             yield
 
 

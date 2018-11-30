@@ -9,6 +9,7 @@ import numpy.random as npr
 import numpy.ma as ma
 import scipy.linalg
 import voronoi_neighbors
+import pickle
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -67,13 +68,6 @@ def getNormtoo(v):
     return v, d
 
 
-def intersect(A, B, C, D):
-    mynorm = scipy.linalg.norm(np.array([A - C, A - D, B - C]), axis=1)
-    if (mynorm < 0.01).any():
-        return False
-    return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
-
-
 def getRotMatArray(Phis):
     Thetas = scipy.linalg.norm(Phis, axis=1)
     Axes_masked = ma.array(Phis) / ma.array(Thetas[..., None])
@@ -99,12 +93,12 @@ class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
                  p_del=0.2, chkx=False, d0max=2., dims=3):
         if dims == 2:
-            self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
-                self.updateLinkForces2D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
+            # self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
+            #     self.updateLinkForces2D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
             self.dims = dims
         elif dims == 3:
-            self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
-                self.updateLinkForces3D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
+            # self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
+            #     self.updateLinkForces3D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
             self.dims = dims
         else:
             print "Oops! Wrong number of dimensions here."
@@ -124,6 +118,7 @@ class Configuration:
         self.d0max = d0max
         # variables to store cell number and cell positions and angles
         self.N = num
+        self.N_inv = 1. / self.N
         self.ones = np.ones(self.N)
         # functions for randoms in default_update_d0
         self.lowers = np.tril_indices(self.N, -1)
@@ -157,9 +152,6 @@ class Configuration:
         self.norm = np.zeros((self.N, self.N, 3))       # normal vector of link at node
         self.Mlink = np.zeros((self.N, self.N, 3))      # Torsion from link on node
         self.Flink = np.zeros((self.N, self.N, 3))      # Force from link on node
-
-        self.Qtrack = []
-        self.Ferrtrack = []
 
     def addlink(self, ni, mi, t1=None, t2=None, d0=None, k=None, bend=None, twist=None, n=None, norm1=None, norm2=None):
         self.islink[ni, mi], self.islink[mi, ni] = True, True
@@ -223,36 +215,139 @@ class Configuration:
 
         return t, norm, normT, bend, twist, k, d0, nodeinds
 
-    def updateLinkForces2D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-        NodesPhi = PHI[Nodeinds[0]]
+    def updateLinkForces2D_newschick_filter(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
         E = self.e[Nodeinds]
         D = self.d[Nodeinds]
-        RotMat = getRotMatArray(NodesPhi)
 
-        NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)      # rotated version of norm to fit current setup
-        TNow = np.einsum("ijk, ik -> ij", RotMat, T)            # rotated version of t to fit current setup
+        # rotated version of t to fit current setup
+        TNow = np.einsum("ijk, ik -> ij", getRotMatArray(PHI[Nodeinds[0]]), T)
 
-        Norm2Now = np.cross(NormNow, E)
+        self.Mlink[Nodeinds] = Bend[..., None] * np.cross(TNow, E)   # Eq 3
 
-        self.Mlink[Nodeinds] = -Bend[..., None] * np.cross(TNow, E)
-
-        M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
+        M = self.Mlink + np.transpose(self.Mlink, axes=(1,0,2))
         M = M[Nodeinds]
 
-        inter2 = ma.array(np.einsum("ij, ij -> i", M, Norm2Now))
-        inter1 = ma.array(np.einsum("ij, ij -> i", M, NormNow))
+        self.Flink[Nodeinds] = (K * (D - D0))[..., None] * E + np.cross(M, E) /  D[:, None]  # Eqs. 10, 13, 14, 15
 
-        inter1 /= ma.array(D)
-        inter2 /= ma.array(D)
+    def updateLinkForces2D_unschick_nofilter(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+        E = self.e
+        D = self.d
+        # RotMat = np.transpose(np.tile(getRotMatArray(PHI), (self.N, 1, 1, 1)), axes=(1,0,2,3))
+        RotMat = getRotMatArray(PHI)
+        T = self.t
+        Bend = self.bend
+        K = self.k
+        D0 = self.d0
 
-        inter1 = ma.getdata(ma.filled(inter1, 0))
-        inter2 = ma.getdata(ma.filled(inter2, 0))
+        # vector perpendicular to E for projection of forces
+        BaseNorm = getNormvec(np.cross(E, ez))
+        BaseNorm2 = np.cross(BaseNorm, E)
+        # TNow = np.einsum("hijk, hik -> hij", RotMat, T)  # rotated version of t to fit current setup
+        TNow = np.einsum("hjk, hik -> hij", RotMat, T)  # rotated version of t to fit current setup
 
-        self.Flink[Nodeinds] = -inter1[..., None] * Norm2Now + \
-                               inter2[..., None] * NormNow + \
-                               (K * (D - D0))[..., None] * E   # Eqs. 13, 14, 15
+        self.Mlink = Bend[..., None] * np.cross(TNow, E)
 
-    def updateLinkForces3D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+        M = self.Mlink + np.transpose(self.Mlink, axes=(1,0,2))
+
+        torqueforce = - np.einsum("ij, ij -> i", M, BaseNorm2)[:, None] * BaseNorm # Eq. 13, because Eq. 14 = 0 in 2D
+        torqueforce /= D[:, None]
+
+        self.Flink[Nodeinds] = (K * (D - D0))[..., None] * E + torqueforce  # Eq. 10
+
+    def updateLinkForces3D_newschick_filter_twist1(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+        E = self.e[Nodeinds]
+        D = self.d[Nodeinds]
+        NodesPhi = PHI[Nodeinds[0]]
+        NodesPhiT = PHI[Nodeinds[1]]
+
+        # Projection of the rotation vector onto the axis connecting cells A and B
+        twistPhi = E * (np.einsum("ik, ik -> i", E, NodesPhi)[..., None])
+        twistPhiT = E * (np.einsum("ik, ik -> i", E, NodesPhiT)[..., None])
+
+        # rotated version of Norm and NormT to fit current setup
+        NormNow = np.einsum("ijk, ik -> ij", getRotMatArray(twistPhi), Norm)
+        NormTNow = np.einsum("ijk, ik -> ij", getRotMatArray(twistPhiT), NormT)
+
+        # rotated version of t to fit current setup
+        TNow = np.einsum("ijk, ik -> ij", getRotMatArray(NodesPhi), T)
+
+        self.Mlink[Nodeinds] = Bend[..., None] * np.cross(TNow, E) + \
+                               Twist[..., None] * np.cross(NormNow, NormTNow)  # Eq 5
+
+        M = self.Mlink + np.transpose(self.Mlink, axes=(1,0,2))
+        M = M[Nodeinds]
+
+        self.Flink[Nodeinds] = (K * (D - D0))[..., None] * E + np.cross(M, E) /  D[:, None]  # Eqs. 10, 13, 14, 15
+
+    def updateLinkForces3D_schick_filter_newtwist2(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+        E = self.e[Nodeinds]
+        D = self.d[Nodeinds]
+
+        twistPHI = self.e * (np.einsum("ijk, ik -> ij", self.e, PHI)[..., None])
+
+        NodesPhi = twistPHI[Nodeinds]
+        NodesPhiT = np.transpose(twistPHI, axes=(1,0,2))[Nodeinds]
+
+        RotMat = getRotMatArray(NodesPhi)
+        RotMatT = getRotMatArray(NodesPhiT)
+
+        NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)      # rotated version of norm to fit current setup
+        NormTNow = np.einsum("ijk, ik -> ij", RotMatT, NormT)
+        # vector perpendicular to E for projection of forces
+        BaseNorm = getNormvec(np.cross(E, ez[None, :]))
+        # rotated version of t to fit current setup
+        TNow = np.einsum("ijk, ik -> ij", getRotMatArray(PHI[Nodeinds[0]]), T)
+
+        self.Mlink[self.islink] = Twist[:, None] * np.cross(NormNow, NormTNow)
+        # print self.Mlink
+        # print self.Mlink + np.transpose(self.Mlink, axes=(1,0,2))
+
+        self.Mlink[self.islink] += Bend[..., None] * np.cross(TNow, E) # + \
+                                 # Twist[:, None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
+
+        M = self.Mlink + np.transpose(self.Mlink, axes=(1,0,2))
+        omega = np.cross(self.e, M)
+        omega = omega[Nodeinds]
+
+        torqueforce = BaseNorm * (np.einsum("ij, ij -> i", BaseNorm, omega)[:, None])
+        torqueforce /= ma.array(D[:, None])
+        torqueforce = ma.getdata(ma.filled(torqueforce, 0))
+
+        self.Flink[Nodeinds] = (K * (D - D0))[..., None] * E - torqueforce  # Eqs. 13, 14, 15
+
+    def updateLinkForces3D_schick_filter_newtwist1(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+        E = self.e[Nodeinds]
+        D = self.d[Nodeinds]
+        NodesPhi = PHI[Nodeinds[0]]
+        NodesPhiT = PHI[Nodeinds[1]]
+
+        twistPhi = E * (np.einsum("ik, ik -> i", E, NodesPhi)[..., None])
+        twistPhiT = E * (np.einsum("ik, ik -> i", E, NodesPhiT)[..., None])
+
+        RotMat = getRotMatArray(twistPhi)
+        RotMatT = getRotMatArray(twistPhiT)
+
+        NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)      # rotated version of norm to fit current setup
+        NormTNow = np.einsum("ijk, ik -> ij", RotMatT, NormT)
+        # vector perpendicular to E for projection of forces
+        BaseNorm = getNormvec(np.cross(E, ez[None, :]))
+        # rotated version of t to fit current setup
+        TNow = np.einsum("ijk, ik -> ij", getRotMatArray(NodesPhi), T)
+
+        self.Mlink[self.islink] = Bend[..., None] * np.cross(TNow, E) + \
+                                  Twist[:, None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
+
+        M = self.Mlink + np.transpose(self.Mlink, axes=(1,0,2))
+        omega = np.cross(self.e, M)
+        omega = omega[Nodeinds]
+
+        torqueforce = BaseNorm * (np.einsum("ij, ij -> i", BaseNorm, omega)[:, None])
+        torqueforce /= ma.array(D[:, None])
+        torqueforce = ma.getdata(ma.filled(torqueforce, 0))
+
+        self.Flink[Nodeinds] = (K * (D - D0))[..., None] * E - torqueforce  # Eqs. 13, 14, 15
+
+    def updateLinkForces3D_unschick_filter_oldtwist(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
         NodesPhi = PHI[Nodeinds[0]]
         NodesPhiT = PHI[Nodeinds[1]]
         E = self.e[Nodeinds]
@@ -260,37 +355,68 @@ class Configuration:
         RotMat = getRotMatArray(NodesPhi)
         RotMatT = getRotMatArray(NodesPhiT)
 
-        NormNow = np.einsum("ijk, ik -> ij", RotMat, Norm)      # rotated version of norm to fit current setup
-        NormTNow = np.einsum("ijk, ik -> ij", RotMatT, NormT)
-        TNow = np.einsum("ijk, ik -> ij", RotMat, T)            # rotated version of t to fit current setup
+        # vector perpendicular to E for projection of forces
+        BaseNorm = getNormvec(np.cross(E, ez))
+        BaseNorm2 = np.cross(BaseNorm, E)
+        # rotated version of t to fit current setup
+        TNow = np.einsum("ijk, ik -> ij", getRotMatArray(PHI[Nodeinds[0]]), T)
+        # rotated version of norm to fit current setup
+        NormNow = np.cross(E, np.einsum("ijk, ik -> ij", RotMat, Norm))
+        NormTNow = np.cross(E, np.einsum("ijk, ik -> ij", RotMatT, NormT))
 
-        Norm2Now = np.cross(NormNow, E)
+        self.Mlink[self.islink] = Bend[..., None] * np.cross(TNow, E) + \
+                                 Twist[..., None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
 
-        self.Mlink[self.islink] = -Bend[..., None] * np.cross(TNow, E) + \
-                                  -Twist[:, None] * np.cross(NormNow, NormTNow)  # Eqs. 5, 6
-
-        M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
+        M = self.Mlink + np.transpose(self.Mlink, axes=(1,0,2))
         M = M[Nodeinds]
 
-        inter2 = ma.array(np.einsum("ij, ij -> i", M, Norm2Now))
-        inter1 = ma.array(np.einsum("ij, ij -> i", M, NormNow))
+        torqueforce = - np.einsum("ij, ij -> i", M, BaseNorm2)[:, None] * BaseNorm + \
+                      np.einsum("ij, ij -> i", M, BaseNorm)[:, None] * BaseNorm2  # Eq. 13, 14
+        torqueforce /= D[:, None]
 
-        inter1 /= ma.array(D)
-        inter2 /= ma.array(D)
-
-        inter1 = ma.getdata(ma.filled(inter1, 0))
-        inter2 = ma.getdata(ma.filled(inter2, 0))
-
-        self.Flink[self.islink] = -inter1[..., None] * Norm2Now + \
-                                  inter2[..., None] * NormNow + \
-                                  (K * (D - D0))[..., None] * E   # Eqs. 13, 14, 15
+        self.Flink[Nodeinds] = (K * (D - D0))[..., None] * E + torqueforce  # Eq. 10
 
     def getForces(self, X, Phi, t, norm, normT, bend, twist, k, d0, nodeinds):
         self.updateDists(X)
-        self.updateLinkForces(Phi, t, norm, normT, bend, twist, k, d0, nodeinds)
+        self.updateLinkForces3D_newschick_filter_twist1(Phi, t, norm, normT, bend, twist, k, d0, nodeinds)
         self.Fnode = np.sum(self.Flink, axis=1)
-        self.Mnode = -np.sum(self.Mlink, axis=1)
+        self.Mnode = np.sum(self.Mlink, axis=1)
+        # print self.Mlink + np.transpose(self.Mlink, axes=(1,0,2)) + self.d[..., None] * np.cross(self.e, np.transpose(self.Flink, axes=(1,0,2)))
+        # print np.sum(self.Fnode, axis=0)
         return self.Fnode, self.Mnode
+
+    def oneequil(self):
+        x = self.nodesX.copy()
+        phi = self.nodesPhi.copy()
+        h = self.dt
+        steps = 0
+        t, norm, normT, bend, twist, k, d0, nodeinds = self.compactStuffINeed()
+        for i in range(self.nmax):
+            self.nodesX = x
+            self.makesnap(i)
+            k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
+            Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) * self.N_inv
+            if Q < self.qmin:
+                pass
+                # break
+            if i == 800:
+                pass
+                sys.exit()
+                # break
+            k1, j1 = h * k1, h * j1
+            k2, j2 = self.getForces(x + k1 * 0.5, phi + j1 * 0.5, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k2, j2 = h * k2, h * j2
+            k3, j3 = self.getForces(x + k2 * 0.5, phi + j2 * 0.5, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k3, j3 = h * k3, h * j3
+            k4, j4 = self.getForces(x + k3, phi + j3, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k4, j4 = h * k4, h * j4
+            x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
+            phi += (j1 + 2 * j2 + 2 * j3 + j4) / 6.
+            steps += 1
+        self.nodesPhi = phi
+        self.nodesnap = np.array(self.nodesnap)
+        self.fnodesnap = np.array(self.fnodesnap)
+        return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
 
     def mechEquilibrium(self):
         x = self.nodesX.copy()
@@ -300,13 +426,13 @@ class Configuration:
         t, norm, normT, bend, twist, k, d0, nodeinds = self.compactStuffINeed()
         for i in range(self.nmax):
             k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
-            Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) / self.N
+            Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) * self.N_inv
             if Q < self.qmin:
                 break
             k1, j1 = h * k1, h * j1
-            k2, j2 = self.getForces(x + k1 / 2, phi + j1 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k2, j2 = self.getForces(x + k1 * 0.5, phi + j1 * 0.5, t, norm, normT, bend, twist, k, d0, nodeinds)
             k2, j2 = h * k2, h * j2
-            k3, j3 = self.getForces(x + k2 / 2, phi + j2 / 2, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k3, j3 = self.getForces(x + k2 * 0.5, phi + j2 * 0.5, t, norm, normT, bend, twist, k, d0, nodeinds)
             k3, j3 = h * k3, h * j3
             k4, j4 = self.getForces(x + k3, phi + j3, t, norm, normT, bend, twist, k, d0, nodeinds)
             k4, j4 = h * k4, h * j4
@@ -459,7 +585,7 @@ class Configuration:
             return 1.
         dt = -log(npr.random()) / S
         if dt > 1:
-            print 'Must adjust d0 variables before the next event!'
+            # print 'Must adjust d0 variables before the next event!'
             return 1.
 
         r = S * npr.random()
@@ -480,7 +606,7 @@ class Configuration:
     def default_update_d0(self, dt):
         myrandom = npr.random((self.randomlength, ))
         self.randomsummand[self.lowers], self.randomsummand.T[self.lowers] = myrandom, myrandom
-        self.d0 += 0.2 * (self.d0_0 - self.d0) * dt + 0.05 * (
+        self.d0 += 0.2 * (self.d0_0 - self.d0) * dt + 0.15 * (
                    2 * sqrt(dt) * self.randomsummand - sqrt(dt))              # magic number 0.2 and 0.05??
 
     def modlink(self):
@@ -500,6 +626,18 @@ class Configuration:
         self.flinksnap.append(scipy.linalg.norm(self.Flink[linkList[..., 0], linkList[..., 1]], axis=1))
         self.snaptimes.append(t)
 
+    def savedata(self, savenodes_r=True, savelinks=True, savenodes_f=True, savelinks_f=True, savet=True):
+        if savenodes_r:
+            np.save("nodesr", self.nodesnap)
+        if savenodes_f:
+            np.save("nodesf", self.fnodesnap)
+        if savet:
+            np.save("ts", self.snaptimes)
+        if savelinks:
+            np.save("links", self.linksnap)
+        if savelinks_f:
+            np.save("linksf", self.flinksnap)
+
     def timeevo(self, tmax, record=False):
         t = 0.
         if record:
@@ -518,19 +656,5 @@ class Configuration:
         if record:
             self.nodesnap = np.array(self.nodesnap)
             self.fnodesnap = np.array(self.fnodesnap)
-            return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
-
-    def minitimeevo(self, tmax, record=False, now=False):
-        t = 0.
-        if record:
-            self.makesnap(0)
-        while t < tmax:
-            dt = self.mechEquilibrium()
-            t += dt
-            if record and not now:
-                self.makesnap(t)
-            self.default_update_d0(dt)
-        if record:
-            self.nodesnap = np.array(self.nodesnap)
-            self.fnodesnap = np.array(self.fnodesnap)
+            self.snaptimes = np.array(self.snaptimes)
             return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
