@@ -20,7 +20,7 @@ def rand3d(L):
     return (np.random.random(3) - 0.5) * L
 
 
-def generate_initial_config(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims):
+def generate_initial_random(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims):
     if N is None:
         N = int(L ** 2)
 
@@ -87,7 +87,7 @@ def generate_default_initial(L=10, N=None):
     return R
 
 
-def generate_config_from_default(R, L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims):
+def generate_from_default(R, L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims):
     N = len(R)
     c = Configuration(N, dt=dt, nmax=nmax, qmin=qmin, d0_0=d0_0, p_add=p_add, p_del=p_del, chkx=chkx, d0max=d0max,
                       dims=dims)
@@ -96,7 +96,8 @@ def generate_config_from_default(R, L, N, dt, nmax, qmin, d0_0, p_add, p_del, ch
 
     return c
 
-def generate_cube(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims, stretch=1.):
+
+def generate_initial_cube(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims, stretch=1.):
     if N is not None:
         print "N decission overriden because of possible conflict with Lmax"
     N = int(L ** 3)
@@ -110,7 +111,6 @@ def generate_cube(L, N, dt, nmax, qmin, d0_0, p_add, p_del, chkx, d0max, dims, s
             for nk in range(L):
                 c.nodesX[L * L * ni + L * nj + nk] = np.array([x0 + stretch * ni, x0 + stretch * nj, x0 + stretch * nk])
     return c
-
 
 if __name__ == '__main__':
 

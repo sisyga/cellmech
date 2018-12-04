@@ -10,7 +10,6 @@ import numpy.ma as ma
 import scipy.linalg
 import itertools
 from scipy.spatial import Delaunay
-import pickle
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -88,7 +87,7 @@ def getRotMat(Phis):
                     [2 * (b * d - a * c), 2 * (c * d + a * b), a * a + d * d - b * b - c * c]])
 
 
-def VoronoiNeighbors(positions, d0max, vodims=2):
+def VoronoiNeighbors(positions, vodims=2):
     if vodims == 3:
         # p = [n for (n, f) in positions]  # component [0] is a 3d vector
         p = positions
@@ -113,7 +112,7 @@ class Configuration:
                  p_del=0.2, chkx=False, d0max=2., dims=3):
         if dims == 2:
             self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
-                self.updateLinkForces2D(PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds)
+                self.updateLinkForces2D(PHI, T, Bend, K, D0, Nodeinds)
             self.dims = dims
         elif dims == 3:
             self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
@@ -235,7 +234,7 @@ class Configuration:
 
         return t, norm, normT, bend, twist, k, d0, nodeinds
 
-    def updateLinkForces2D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
+    def updateLinkForces2D(self, PHI, T, Bend, K, D0, Nodeinds):
         E = self.e[Nodeinds]
         D = self.d[Nodeinds]
 
@@ -363,8 +362,7 @@ class Configuration:
         mynrm2 = scipy.linalg.norm(A - D, axis=1)
         mynrm3 = scipy.linalg.norm(B - C, axis=1)
 
-        distbool1, distbool2, distbool3 = np.greater(mynrm1, 0.01), np.greater(mynrm2, 0.01), np.greater(mynrm3,
-                                                                                                         0.01)
+        distbool1, distbool2, distbool3 = np.greater(mynrm1, 0.01), np.greater(mynrm2, 0.01), np.greater(mynrm3, 0.01)
 
         distbool = np.logical_and(distbool1, distbool2)
         distbool = np.logical_and(distbool, distbool3)
@@ -418,8 +416,9 @@ class Configuration:
     def tryLink(self, n1, n2):
         if self.islink[n1, n2]:
             return -1
-        if self.intersect_withone(n1, n2):
-            return -1  # false
+        if self.dims == 2:
+            if self.intersect_withone(n1, n2):
+                return -1  # false
         d = scipy.linalg.norm(self.nodesX[n1] - self.nodesX[n2])
         if d > self.d0max:
             return -1  # false
@@ -427,7 +426,7 @@ class Configuration:
 
     def addLinkList(self):
         to_add = []
-        for i, j in VoronoiNeighbors(self.nodesX, self.d0max, vodims=self.dims):
+        for i, j in VoronoiNeighbors(self.nodesX, vodims=self.dims):
             d = self.tryLink(i, j)
             if d > 1e-5:
                 p = (1 - (d / self.d0max))
@@ -501,9 +500,9 @@ class Configuration:
         if savelinks_f:
             np.save("linksf", self.flinksnap)
 
-    def timeevo(self, tmax, record=False):
+    def timeevo(self, tmax, isinit=True, isfinis=True, record=False):
         t = 0.
-        if record:
+        if record and isinit:
             self.makesnap(0)
         while t < tmax:
             dt = self.mechEquilibrium()
@@ -516,7 +515,7 @@ class Configuration:
             if record:
                 self.makesnap(t)
             update_progress(t / tmax)
-        if record:
+        if record and isfinis:
             self.nodesnap = np.array(self.nodesnap)
             self.fnodesnap = np.array(self.fnodesnap)
             self.snaptimes = np.array(self.snaptimes)
