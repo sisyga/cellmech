@@ -155,6 +155,7 @@ class Configuration:
         self.nodesX = np.zeros((self.N, 3))             # r of nodes
         self.nodesPhi = np.zeros((self.N, 3))           # phi of nodes
         self.Fnode = np.zeros((self.N, 3))              # total force on node
+        self.F0 = np.zeros((self.N, 3))                 # external force on node
         self.Mnode = np.zeros((self.N, 3))              # total torsion on node
 
         """description of links"""
@@ -249,15 +250,35 @@ class Configuration:
         self.Flink[Nodeinds] = (K * (D - D0))[..., None] * E + np.cross(M, E) / D[:, None]  # Eqs. 10, 13, 14, 15
 
     def updateLinkForces3D(self, PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds):
-        pass
+        E = self.e[Nodeinds]
+        D = self.d[Nodeinds]
+        NodesPhi = PHI[Nodeinds[0]]
+        NodesPhiT = PHI[Nodeinds[1]]
+
+        # rotated version of Norm and NormT to fit current setup
+        NormNow = np.einsum("ijk, ik -> ij", getRotMatArray(NodesPhi), Norm)
+        NormTNow = np.einsum("ijk, ik -> ij", getRotMatArray(NodesPhiT), NormT)
+
+        # rotated version of t to fit current setup
+        TNow = np.einsum("ijk, ik -> ij", getRotMatArray(NodesPhi), T)
+
+        # calculated new vector \bm{\tilde{n}}_{A, l}
+        NormTilde = getNormvec(NormNow - np.einsum("ij, ij -> i", NormNow, E)[:, None] * E)
+        NormTTilde = getNormvec(NormTNow - np.einsum("ij, ij -> i", NormTNow, E)[:, None] * E)
+
+        self.Mlink[Nodeinds] = Bend[..., None] * np.cross(TNow, E) + \
+                               Twist[..., None] * np.cross(NormTilde, NormTTilde)  # Eq 5
+
+        M = self.Mlink + np.transpose(self.Mlink, axes=(1, 0, 2))
+        M = M[Nodeinds]
+
+        self.Flink[Nodeinds] = (K * (D - D0))[..., None] * E + np.cross(M, E) / D[:, None]  # Eqs. 10, 13, 14, 15
 
     def getForces(self, X, Phi, t, norm, normT, bend, twist, k, d0, nodeinds):
         self.updateDists(X)
         self.updateLinkForces(Phi, t, norm, normT, bend, twist, k, d0, nodeinds)
-        self.Fnode = np.sum(self.Flink, axis=1)
+        self.Fnode = self.F0 + np.sum(self.Flink, axis=1)
         self.Mnode = np.sum(self.Mlink, axis=1)
-        print self.Mlink + np.transpose(self.Mlink, axes=(1,0,2)) + self.d[..., None] * np.cross(self.e, np.transpose(self.Flink, axes=(1,0,2)))
-        # print np.sum(self.Fnode, axis=0)
         return self.Fnode, self.Mnode
 
     def mechEquilibrium(self):
@@ -499,4 +520,4 @@ class Configuration:
             self.nodesnap = np.array(self.nodesnap)
             self.fnodesnap = np.array(self.fnodesnap)
             self.snaptimes = np.array(self.snaptimes)
-            return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
+        return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
