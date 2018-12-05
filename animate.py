@@ -26,7 +26,7 @@ def showconfig(c, l, nF, fl, figure=None, figureindex=0, bgcolor=(1, 1, 1), fgco
     return cells, links
 
 
-@mlab.animate(delay=30)
+@mlab.animate(delay=70)
 def animateconfigs(Configs, Links, nodeForces, linkForces, ts, figureindex=0, bgcolor=(1, 1, 1),
                    fgcolor=(0, 0, 0), figsize=(1000, 1000), cmap='viridis', cbar=False):
     fig = mlab.figure(figureindex, bgcolor=bgcolor, fgcolor=fgcolor, size=figsize)

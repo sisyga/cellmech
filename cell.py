@@ -1,5 +1,7 @@
 #!/usr/bin/python  -u
 
+from __future__ import division
+
 import sys
 import warnings
 from math import exp, log, sqrt
@@ -468,7 +470,7 @@ class Configuration:
     def default_update_d0(self, dt):
         myrandom = npr.random((self.randomlength, ))
         self.randomsummand[self.lowers], self.randomsummand.T[self.lowers] = myrandom, myrandom
-        self.d0 += 0.2 * (self.d0_0 - self.d0) * dt + 0.15 * (
+        self.d0 += 0.2 * (self.d0_0 - self.d0) * dt + 0.05 * (
                    2 * sqrt(dt) * self.randomsummand - sqrt(dt))              # magic number 0.2 and 0.05??
 
     def modlink(self):
@@ -519,4 +521,36 @@ class Configuration:
             self.nodesnap = np.array(self.nodesnap)
             self.fnodesnap = np.array(self.fnodesnap)
             self.snaptimes = np.array(self.snaptimes)
+        return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
+
+    def oneequil(self):
+        x = self.nodesX.copy()
+        phi = self.nodesPhi.copy()
+        h = self.dt
+        steps = 0
+        t, norm, normT, bend, twist, k, d0, nodeinds = self.compactStuffINeed()
+        for i in range(self.nmax):
+            self.nodesX = x
+            self.makesnap(i)
+            k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
+            Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) * self.N_inv
+            if Q < self.qmin:
+                pass
+                # break
+            if i == 2000:
+                pass
+                # break
+            k1, j1 = h * k1, h * j1
+            k2, j2 = self.getForces(x + k1 * 0.5, phi + j1 * 0.5, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k2, j2 = h * k2, h * j2
+            k3, j3 = self.getForces(x + k2 * 0.5, phi + j2 * 0.5, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k3, j3 = h * k3, h * j3
+            k4, j4 = self.getForces(x + k3, phi + j3, t, norm, normT, bend, twist, k, d0, nodeinds)
+            k4, j4 = h * k4, h * j4
+            x += (k1 + 2 * k2 + 2 * k3 + k4) / 6.
+            phi += (j1 + 2 * j2 + 2 * j3 + j4) / 6.
+            steps += 1
+        self.nodesPhi = phi
+        self.nodesnap = np.array(self.nodesnap)
+        self.fnodesnap = np.array(self.fnodesnap)
         return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes

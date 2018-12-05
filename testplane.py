@@ -148,7 +148,7 @@ if __name__ == '__main__':
 
     config.updateDists(config.nodesX)
 
-    for i, j in VoronoiNeighbors(config.nodesX, d0max=config.d0max, vodims=2):
+    for i, j in VoronoiNeighbors(config.nodesX, vodims=2):
         if np.linalg.norm(config.nodesX[i] - config.nodesX[j]) <= d0max:
             config.addlink(i, j)
 
