@@ -3,6 +3,7 @@ import itertools
 # from pyhull.delaunay import DelaunayTri
 from scipy.spatial import Delaunay, delaunay_plot_2d
 from matplotlib import pyplot as plt
+import sys
 
 # describing a plane through point P with normal vector n
 # P = (px, py, pz)
@@ -82,7 +83,6 @@ def VoronoiNeighbors(positions, d0max, is3D=False):
     #    return [(i, j) for (i, j) in neighbors if i < len(positions) and j < len(positions)]
     # else:
     #    return neighbors
-
 
 # http://stackoverflow.com/questions/419163/what-does-if-name-main-do
 
