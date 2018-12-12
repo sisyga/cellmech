@@ -111,7 +111,7 @@ def VoronoiNeighbors(positions, vodims=2):
 
 class Configuration:
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
-                 p_del=0.2, chkx=False, d0max=2., dims=3):
+                 p_del=0.2, chkx=False, d0max=2., dims=3, isF0=False, isanchor=False):
         if dims == 2:
             self.updateLinkForces = lambda PHI, T, Norm, NormT, Bend, Twist, K, D0, Nodeinds: \
                 self.updateLinkForces2D(PHI, T, Bend, K, D0, Nodeinds)
@@ -156,7 +156,11 @@ class Configuration:
         self.nodesX = np.zeros((self.N, 3))             # r of nodes
         self.nodesPhi = np.zeros((self.N, 3))           # phi of nodes
         self.Fnode = np.zeros((self.N, 3))              # total force on node
+        self.isF0 = isF0
         self.F0 = np.zeros((self.N, 3))                 # external force on node
+        self.isanchor = isanchor
+        self.X0 = np.zeros((self.N, 3))                 # node anchor, must be set if needed!
+        self.knode = np.zeros((self.N))                 # spring constant of node to anchor point, defaults to 0
         self.Mnode = np.zeros((self.N, 3))              # total torsion on node
 
         """description of links"""
@@ -173,6 +177,19 @@ class Configuration:
         self.norm = np.zeros((self.N, self.N, 3))       # normal vector of link at node
         self.Mlink = np.zeros((self.N, self.N, 3))      # Torsion from link on node
         self.Flink = np.zeros((self.N, self.N, 3))      # Force from link on node
+
+        self.reset_nodesum()
+
+    def reset_nodesum(self):
+        # add forces (external or anchor based) to nodes
+        if self.isF0 == False and self.isanchor == False:
+            self.nodesum = lambda : np.sum(self.Flink, axis=1)
+        elif self.isF0 == True and self.isanchor == False:
+            self.nodesum = lambda : np.sum(self.Flink, axis=1) + self.F0
+        elif self.isF0 == False and self.isanchor == True:
+            self.nodesum = lambda : np.sum(self.Flink, axis=1) + self.knode * (self.X0 - self.nodesX)
+        elif self.isF0 == True and self.isanchor == True:
+            self.nodesum = lambda : np.sum(self.Flink, axis=1) + self.F0 + self.knode * (self.X0 - self.nodesX)
 
     def addlink(self, ni, mi, t1=None, t2=None, d0=None, k=None, bend=None, twist=None, n=None, norm1=None, norm2=None):
         self.islink[ni, mi], self.islink[mi, ni] = True, True
@@ -278,7 +295,7 @@ class Configuration:
     def getForces(self, X, Phi, t, norm, normT, bend, twist, k, d0, nodeinds):
         self.updateDists(X)
         self.updateLinkForces(Phi, t, norm, normT, bend, twist, k, d0, nodeinds)
-        self.Fnode = self.F0 + np.sum(self.Flink, axis=1)
+        self.Fnode = self.nodesum()
         self.Mnode = np.sum(self.Mlink, axis=1)
         return self.Fnode, self.Mnode
 
@@ -535,11 +552,7 @@ class Configuration:
             k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
             Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) * self.N_inv
             if Q < self.qmin:
-                pass
-                # break
-            if i == 2000:
-                pass
-                # break
+                break
             k1, j1 = h * k1, h * j1
             k2, j2 = self.getForces(x + k1 * 0.5, phi + j1 * 0.5, t, norm, normT, bend, twist, k, d0, nodeinds)
             k2, j2 = h * k2, h * j2
