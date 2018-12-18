@@ -69,6 +69,7 @@ def getNormtoo(v):
 
 
 def getRotMatArray(Phis):
+    # returns an array of rotation matrices in the same manner as getRotMat(Phi)
     Thetas = scipy.linalg.norm(Phis, axis=1)
     Axes_masked = ma.array(Phis) / ma.array(Thetas[..., None])
     Axes = ma.getdata(Axes_masked.filled(0))
@@ -80,8 +81,10 @@ def getRotMatArray(Phis):
     return np.transpose(RotMat, axes=(2, 0, 1))
 
 
-def getRotMat(Phis):
-    Axis, Theta = getNormtoo(Phis)
+def getRotMat(Phi):
+    # returns the 3D-rotation-matrix for rotation around the axis and the angle 
+    # defined by the direction and length of Phi
+    Axis, Theta = getNormtoo(Phi)
     a = np.cos(Theta / 2)
     b, c, d = Axis * np.sin(Theta / 2)
     return np.array([[a * a + b * b - c * c - d * d, 2 * (b * c - a * d), 2 * (b * d + a * c)],
@@ -90,6 +93,7 @@ def getRotMat(Phis):
 
 
 def VoronoiNeighbors(positions, vodims=2):
+    # returns Voronoi tesselation - possible issues for 2D-array in 3D-system
     if vodims == 3:
         # p = [n for (n, f) in positions]  # component [0] is a 3d vector
         p = positions
@@ -110,6 +114,7 @@ def VoronoiNeighbors(positions, vodims=2):
 
 
 class Configuration:
+    # general class for cellmech
     def __init__(self, num, dt=0.01, nmax=3000, qmin=0.001, d0_0=1, force_limit=15., p_add=1.,
                  p_del=0.2, chkx=False, d0max=2., dims=3, isF0=False, isanchor=False):
         if dims == 2:
@@ -127,19 +132,18 @@ class Configuration:
         self.dims = dims
         # parameters for mechanical equilibration
         self.dt = dt
-        self.nmax = nmax
-        self.qmin = qmin
+        self.nmax = nmax  # maximum timesteps for mech equilib
+        self.qmin = qmin  # minimum stress in system before mech equilib is ended
         # parameters to add/remove links
-        self.d0_0 = d0_0
+        self.d0_0 = d0_0  # global link equilibrium lenth
         self.force_limit = force_limit
-        self.p_add = p_add
-        self.p_del = p_del
-        self.chkx = chkx
-        self.d0max = d0max
+        self.p_add = p_add  # probability to add link
+        self.p_del = p_del  # probability to delete link
+        self.chkx = chkx  # bool: check for link intersection (only makes sense in 2d)
+        self.d0max = d0max  # maximum cell distance for link formation
         # variables to store cell number and cell positions and angles
-        self.N = num
+        self.N = num  # amount of cells in system
         self.N_inv = 1. / self.N
-        self.ones = np.ones(self.N)
         # functions for randoms in default_update_d0
         self.lowers = np.tril_indices(self.N, -1)
         self.randomsummand = np.zeros((self.N, self.N))
@@ -295,8 +299,8 @@ class Configuration:
     def getForces(self, X, Phi, t, norm, normT, bend, twist, k, d0, nodeinds):
         self.updateDists(X)
         self.updateLinkForces(Phi, t, norm, normT, bend, twist, k, d0, nodeinds)
-        self.Fnode = self.nodesum()
-        self.Mnode = np.sum(self.Mlink, axis=1)
+        self.Fnode = self.nodesum()  # Eq. 16
+        self.Mnode = np.sum(self.Mlink, axis=1)  # Eq. 17
         return self.Fnode, self.Mnode
 
     def mechEquilibrium(self):
@@ -306,6 +310,7 @@ class Configuration:
         steps = 0
         t, norm, normT, bend, twist, k, d0, nodeinds = self.compactStuffINeed()
         for i in range(self.nmax):
+            # 4-step Runge-Kutte
             k1, j1 = self.getForces(x, phi, t, norm, normT, bend, twist, k, d0, nodeinds)
             Q = (np.einsum("ij, ij", k1, k1) + np.einsum("ij, ij", j1, j1)) * self.N_inv
             if Q < self.qmin:
@@ -325,15 +330,18 @@ class Configuration:
         return (steps + 1) * h
 
     def getLinkList(self):
+        # get list of tuples of indices of existing links
         allLinks0, allLinks1 = np.where(self.islink == True)
         return np.array([[allLinks0[i], allLinks1[i]] for i in range(len(allLinks0)) if allLinks0[i] > allLinks1[i]])
 
     def getLinkTuple(self):
+        # get tuple of lists of indices of existing links
         allLinks0, allLinks1 = np.where(self.islink == True)
         inds = np.where(allLinks0 > allLinks1)
         return allLinks0[inds], allLinks1[inds]
 
     def intersect_all(self):
+        # check whether any link in the system intersects - algorith only useful in 2d
         allLinks0, allLinks1 = self.getLinkTuple()
 
         A = self.nodesX[allLinks0][:, None, :]
@@ -370,6 +378,7 @@ class Configuration:
         return clashlinks
 
     def intersect_withone(self, n1, n2):
+        # check whether one given link intersects with all others - algorithm only useful in 2d
         allLinks0, allLinks1 = self.getLinkTuple()
 
         A = self.nodesX[n1][None, :]
@@ -404,6 +413,7 @@ class Configuration:
             return False
 
     def checkLinkX(self):
+        # find and remove intersecting links
         delete_list = []
         Xs = self.intersect_all()
         while len(Xs) > 0:
@@ -422,6 +432,7 @@ class Configuration:
             self.removelink(badlink[0], badlink[1])
 
     def delLinkList(self):
+        # create list of candidates for being deleted
         linklist = self.getLinkList()
         to_del = []
         for link in linklist:
@@ -433,6 +444,7 @@ class Configuration:
         return to_del
 
     def tryLink(self, n1, n2):
+        # test a candidate for becoming a new link
         if self.islink[n1, n2]:
             return -1
         if self.dims == 2:
@@ -444,6 +456,7 @@ class Configuration:
         return d  # true: d>0
 
     def addLinkList(self):
+        # create list of candidates for becoming new link
         to_add = []
         for i, j in VoronoiNeighbors(self.nodesX, vodims=self.dims):
             d = self.tryLink(i, j)
@@ -453,6 +466,7 @@ class Configuration:
         return to_add
 
     def pickEvent(self, to_del, to_add):
+        # Gillespie Algorithm for choosing which link to add or delete
         s1 = 0.
         for (l, p) in to_del:
             s1 += p * self.p_del
@@ -485,12 +499,14 @@ class Configuration:
                     return dt
 
     def default_update_d0(self, dt):
+        # update local equilibrium link length (eq. 23)
         myrandom = npr.random((self.randomlength, ))
         self.randomsummand[self.lowers], self.randomsummand.T[self.lowers] = myrandom, myrandom
         self.d0 += 0.2 * (self.d0_0 - self.d0) * dt + 0.05 * (
                    2 * sqrt(dt) * self.randomsummand - sqrt(dt))              # magic number 0.2 and 0.05??
 
     def modlink(self):
+        # add or delete link and perform equilibrium-link-change
         if self.chkx:
             self.checkLinkX()
         to_del = self.delLinkList()
@@ -500,6 +516,7 @@ class Configuration:
         return dt
 
     def makesnap(self, t):
+        # create snapshot of current configuration
         self.nodesnap.append(self.nodesX.copy())
         self.fnodesnap.append(self.Fnode.copy())
         linkList = self.getLinkList()
@@ -508,6 +525,7 @@ class Configuration:
         self.snaptimes.append(t)
 
     def savedata(self, savenodes_r=True, savelinks=True, savenodes_f=True, savelinks_f=True, savet=True):
+        # save snapshots to system
         if savenodes_r:
             np.save("nodesr", self.nodesnap)
         if savenodes_f:
@@ -520,6 +538,7 @@ class Configuration:
             np.save("linksf", self.flinksnap)
 
     def timeevo(self, tmax, isinit=True, isfinis=True, record=False):
+        # run through three-step cycle
         t = 0.
         if record and isinit:
             self.makesnap(0)
@@ -541,6 +560,7 @@ class Configuration:
         return self.nodesnap, self.linksnap, self.fnodesnap, self.flinksnap, self.snaptimes
 
     def oneequil(self):
+        # perform only mechanical equilibration, creating snapshots of each step
         x = self.nodesX.copy()
         phi = self.nodesPhi.copy()
         h = self.dt
