@@ -155,7 +155,7 @@ if __name__ == '__main__':
 
     # cProfile.run('config.timeevo(20, record=True)', sort='cumtime')
 
-    configs, links, nodeforces, linkforces, ts = config.timeevo(200., record=True)
+    configs, links, nodeforces, linkforces, ts = config.timeevo(16., record=True)
     config.savedata()
     animateconfigs(configs, links, nodeforces, linkforces, ts)
     mlab.show()
